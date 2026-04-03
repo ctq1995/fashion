@@ -6,6 +6,7 @@ export type MusicSource =
   | 'kuwo'
   | 'joox'
   | 'bilibili'
+  | 'gequbao'
   | 'tencent'
   | 'migu'
   | 'kugou'
@@ -73,6 +74,16 @@ export const SOURCE_CATALOG: MusicSourceMeta[] = [
     autoSwitch: true,
     state: 'available',
     note: '当前可播放，但码率是动态的。',
+  },
+  {
+    value: 'gequbao',
+    label: 'Gequbao',
+    visible: true,
+    selectable: true,
+    defaultEnabled: true,
+    autoSwitch: false,
+    state: 'available',
+    note: 'Search and playback via gequbao.com',
   },
   {
     value: 'tencent',
@@ -219,6 +230,7 @@ export interface SearchResult {
 
 export interface MusicUrl {
   url?: string;
+  localPath?: string;
   br?: unknown;
   size?: unknown;
 }
@@ -277,6 +289,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object';
 }
 
+function isNullableString(value: unknown): value is string | null | undefined {
+  return value === null || value === undefined || typeof value === 'string';
+}
+
 function isSearchResult(value: unknown): value is SearchResult {
   return (
     isObject(value) &&
@@ -292,18 +308,22 @@ function isSearchResultList(value: unknown): value is SearchResult[] {
 }
 
 function isMusicUrl(value: unknown): value is MusicUrl {
-  return isObject(value) && (!('url' in value) || typeof value.url === 'string' || value.url === undefined);
+  return (
+    isObject(value) &&
+    (!('url' in value) || isNullableString(value.url)) &&
+    (!('localPath' in value) || isNullableString(value.localPath))
+  );
 }
 
 function isPicUrl(value: unknown): value is PicUrl {
-  return isObject(value) && (!('url' in value) || typeof value.url === 'string' || value.url === undefined);
+  return isObject(value) && (!('url' in value) || isNullableString(value.url));
 }
 
 function isLyricResult(value: unknown): value is LyricResult {
   return (
     isObject(value) &&
-    (!('lyric' in value) || typeof value.lyric === 'string' || value.lyric === undefined) &&
-    (!('tlyric' in value) || typeof value.tlyric === 'string' || value.tlyric === undefined)
+    (!('lyric' in value) || isNullableString(value.lyric)) &&
+    (!('tlyric' in value) || isNullableString(value.tlyric))
   );
 }
 
@@ -316,6 +336,10 @@ function resolveSearchSource(source: MusicSource, kind: SearchKind): string {
 }
 
 const inFlightRequests = new Map<string, Promise<unknown>>();
+
+export function clearMusicApiTransientState() {
+  inFlightRequests.clear();
+}
 
 async function invokeWithCache<T>(
   cacheKey: string,
@@ -385,12 +409,19 @@ export const musicApi = {
     );
   },
   getMusicUrl: (source: string, id: string, br = 320) =>
-    invokeWithCache(
-      keyOf('url', source, id, br),
-      1000 * 60 * 10,
-      () => invoke<MusicUrl>('get_music_url', { source, id, br }),
-      isMusicUrl,
-    ),
+    invoke<MusicUrl>('get_music_url', { source, id, br }).then((result) => {
+      if (!isMusicUrl(result)) {
+        if (source === 'gequbao') {
+          console.error('[gequbao-debug] invalid-music-url-response', result);
+        }
+        throw new Error('Invalid music url response');
+      }
+      return {
+        ...result,
+        url: result.url ?? undefined,
+        localPath: result.localPath ?? undefined,
+      };
+    }),
   getPicUrl: (source: string, id: string, size = DEFAULT_PIC_SIZE) =>
     invokeWithCache(
       picCacheKey(source, id, size),

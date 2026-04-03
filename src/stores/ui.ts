@@ -28,6 +28,7 @@ const ALL_SOURCE_VALUES = SOURCES.map((item) => item.value);
 const SELECTABLE_SOURCE_VALUES = SOURCES
   .filter((item) => item.selectable)
   .map((item) => item.value);
+const MIGRATED_DEFAULT_SOURCES: MusicSource[] = ['gequbao'];
 
 function isTheme(value: unknown): value is AppTheme {
   return value === 'light' || value === 'dark';
@@ -41,9 +42,19 @@ function sameSources(left: MusicSource[], right: MusicSource[]) {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
-function normalizeEnabledSources(value: MusicSource[]): MusicSource[] {
+function normalizeEnabledSources(value: MusicSource[], includeMigratedDefaults = false): MusicSource[] {
   const normalized = SELECTABLE_SOURCE_VALUES.filter((source) => value.includes(source));
-  return normalized.length ? normalized : [...DEFAULT_ENABLED_SOURCES];
+  if (!normalized.length) {
+    return [...DEFAULT_ENABLED_SOURCES];
+  }
+
+  if (!includeMigratedDefaults) {
+    return normalized;
+  }
+
+  return SELECTABLE_SOURCE_VALUES.filter(
+    (source) => normalized.includes(source) || MIGRATED_DEFAULT_SOURCES.includes(source),
+  );
 }
 
 function readInitialTheme(): AppTheme {
@@ -60,6 +71,7 @@ function readEnabledSources(): MusicSource[] {
       fallback: [...DEFAULT_ENABLED_SOURCES],
       validate: (value): value is MusicSource[] => Array.isArray(value) && value.every(isMusicSource),
     }),
+    true,
   );
 }
 

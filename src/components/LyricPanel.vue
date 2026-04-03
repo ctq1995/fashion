@@ -68,6 +68,7 @@
                   :active="index === activeLyricIndex"
                   :progress="index === activeLyricIndex ? activeLineProgress * 100 : null"
                   :speed="ui.lyricSettings.scrollSpeed"
+                  scroll-mode="progress"
                 />
                 <LyricMarqueeText
                   v-if="translatedLine(index)"
@@ -75,6 +76,7 @@
                   :text="translatedLine(index)"
                   :active="index === activeLyricIndex"
                   :speed="ui.lyricSettings.scrollSpeed"
+                  scroll-mode="never"
                 />
               </button>
 

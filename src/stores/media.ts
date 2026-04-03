@@ -90,6 +90,14 @@ export const useMediaStore = defineStore('media', () => {
     return request;
   }
 
+  function clearRuntimeCoverCache() {
+    inFlightCovers.clear();
+
+    for (const key of Object.keys(coverUrls)) {
+      delete coverUrls[key];
+    }
+  }
+
   return {
     coverUrls,
     coverCacheKey,
@@ -99,5 +107,6 @@ export const useMediaStore = defineStore('media', () => {
     getTrackCoverUrl,
     attachTrackCover,
     ensureTrackCover,
+    clearRuntimeCoverCache,
   };
 });

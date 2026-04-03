@@ -203,6 +203,12 @@ pub fn current_download_directory(app: &AppHandle) -> Result<PathBuf, String> {
     resolve_download_directory(app, &preferences)
 }
 
+pub fn current_data_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    let _guard = storage_lock().lock().map_err(|error| error.to_string())?;
+    let preferences = read_preferences_file(app)?;
+    resolve_data_directory(app, &preferences)
+}
+
 #[tauri::command]
 pub fn load_persistence_bootstrap(app: AppHandle) -> Result<PersistenceBootstrap, String> {
     let _guard = storage_lock().lock().map_err(|error| error.to_string())?;
@@ -233,6 +239,26 @@ pub fn write_persistence_entry(app: AppHandle, key: String, value: String) -> Re
     let mut snapshot = read_snapshot_file(&app, &preferences)?;
     snapshot.entries.insert(key, value);
     write_snapshot_file(&app, &preferences, &snapshot.entries)
+}
+
+#[tauri::command]
+pub fn remove_persistence_entries(app: AppHandle, keys: Vec<String>) -> Result<usize, String> {
+    let _guard = storage_lock().lock().map_err(|error| error.to_string())?;
+    let preferences = read_preferences_file(&app)?;
+    let mut snapshot = read_snapshot_file(&app, &preferences)?;
+    let mut removed = 0usize;
+
+    for key in keys {
+        if snapshot.entries.remove(&key).is_some() {
+            removed += 1;
+        }
+    }
+
+    if removed > 0 {
+        write_snapshot_file(&app, &preferences, &snapshot.entries)?;
+    }
+
+    Ok(removed)
 }
 
 #[tauri::command]

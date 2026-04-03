@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="settings-panel app-scroll">
     <section class="settings-card">
       <div class="section-head">
@@ -442,6 +442,24 @@
             </button>
           </div>
         </div>
+        <div class="storage-row">
+          <div class="storage-copy">
+            <strong>缓存</strong>
+            <span class="storage-path">{{ cacheLocation }}</span>
+            <small>清理搜索、封面、歌词和已缓存的音频文件，下次搜索或播放会重新拉取。</small>
+            <small v-if="storage.cacheMessage" class="storage-helper">{{ storage.cacheMessage }}</small>
+          </div>
+          <div class="storage-actions">
+            <button
+              type="button"
+              class="app-btn app-btn--danger"
+              :disabled="storage.busyTarget !== null"
+              @click="handleClearCache"
+            >
+              {{ storage.busyTarget === 'cache' ? '清理中...' : '清理缓存' }}
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -471,7 +489,7 @@
 
 <script setup lang="ts">
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { reactive, watch } from 'vue';
+import { computed, reactive, watch } from 'vue';
 import { SOURCES } from '@/api/music';
 import { type Bitrate, usePlayerStore } from '@/stores/player';
 import { useStorageStore } from '@/stores/storage';
@@ -485,6 +503,11 @@ const player = usePlayerStore();
 const ui = useUiStore();
 const storage = useStorageStore();
 const selectableSourceCount = SOURCES.filter((source) => source.selectable).length;
+const cacheLocation = computed(() => {
+  const base = storage.preferences.effectiveDataDirectory?.trim();
+  if (!base) return 'Local cache';
+  return `${base}${base.endsWith('/') || base.endsWith('\\') ? '' : '\\'}cache`;
+});
 
 type LyricColorKey = 'baseColor' | 'highlightColor';
 
@@ -573,6 +596,18 @@ async function openCreditsUrl() {
       window.open(CREDITS_URL, '_blank', 'noopener,noreferrer');
     }
   }
+}
+
+async function handleClearCache() {
+  if (storage.busyTarget) return;
+  if (
+    typeof window !== 'undefined'
+    && !window.confirm('确认清理缓存吗？已缓存的音频、搜索、封面和歌词数据会被删除。')
+  ) {
+    return;
+  }
+
+  await storage.clearCache();
 }
 
 function normalizeLyricColorDraft(value: string) {
@@ -1076,6 +1111,10 @@ function resetLyricColor(key: LyricColorKey) {
 .credit-copy small {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.storage-helper {
+  color: var(--text-secondary);
 }
 
 .storage-actions {

@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { computed, ref, watch } from 'vue';
 import {
   AUTO_SWITCH_SOURCE_VALUES,
@@ -59,6 +60,37 @@ interface PlayerSession {
   volume: number;
   playMode: PlayMode;
   preferredBitrate: Bitrate;
+}
+
+function shouldUseAnonymousCors(source: string, localPath?: string) {
+  return !localPath && source !== 'gequbao';
+}
+
+function resolvePlayableAudioUrl(url?: string, localPath?: string) {
+  if (localPath) {
+    return convertFileSrc(localPath);
+  }
+  return url ?? '';
+}
+
+function shouldDebugPlayback(track: Pick<Track, 'source'> | null | undefined) {
+  return track?.source === 'gequbao';
+}
+
+function logPlaybackDebug(stage: string, payload?: unknown) {
+  if (payload === undefined) {
+    console.log('[gequbao-debug]', stage);
+    return;
+  }
+  console.log('[gequbao-debug]', stage, payload);
+}
+
+function logPlaybackError(stage: string, payload?: unknown) {
+  if (payload === undefined) {
+    console.error('[gequbao-debug]', stage);
+    return;
+  }
+  console.error('[gequbao-debug]', stage, payload);
 }
 
 function trackIdentity(track: Pick<Track, 'id' | 'source'>): string {
@@ -229,7 +261,6 @@ export const usePlayerStore = defineStore('player', () => {
   const initialSession = readInitialSession(initialBitrate);
 
   const audio = new Audio();
-  audio.crossOrigin = 'anonymous';
   audio.preload = 'auto';
 
   const queue = ref<Track[]>(initialSession.queue.map((track) => media.attachTrackCover(track)));
@@ -405,12 +436,28 @@ export const usePlayerStore = defineStore('player', () => {
     if (!audio.currentSrc) return;
     loading.value = true;
     error.value = '';
+    if (shouldDebugPlayback(currentTrack.value)) {
+      logPlaybackDebug('audio-loadstart', {
+        currentSrc: audio.currentSrc,
+        crossOrigin: audio.crossOrigin,
+        networkState: audio.networkState,
+        readyState: audio.readyState,
+      });
+    }
   });
 
   audio.addEventListener('canplay', () => {
     if (!audio.currentSrc) return;
     loading.value = false;
     error.value = '';
+    if (shouldDebugPlayback(currentTrack.value)) {
+      logPlaybackDebug('audio-canplay', {
+        currentSrc: audio.currentSrc,
+        duration: audio.duration,
+        networkState: audio.networkState,
+        readyState: audio.readyState,
+      });
+    }
   });
 
   audio.addEventListener('ended', () => {
@@ -429,6 +476,14 @@ export const usePlayerStore = defineStore('player', () => {
     isPlaying.value = true;
     loading.value = false;
     error.value = '';
+    if (shouldDebugPlayback(currentTrack.value)) {
+      logPlaybackDebug('audio-playing', {
+        currentSrc: audio.currentSrc,
+        currentTime: audio.currentTime,
+        networkState: audio.networkState,
+        readyState: audio.readyState,
+      });
+    }
     updateMediaSession();
   });
 
@@ -449,6 +504,16 @@ export const usePlayerStore = defineStore('player', () => {
   audio.addEventListener('error', () => {
     if (isResettingAudio || !audio.currentSrc || audio.networkState === HTMLMediaElement.NETWORK_EMPTY) {
       return;
+    }
+    if (shouldDebugPlayback(currentTrack.value)) {
+      logPlaybackError('audio-error', {
+        currentSrc: audio.currentSrc,
+        networkState: audio.networkState,
+        readyState: audio.readyState,
+        errorCode: audio.error?.code ?? null,
+        errorMessage: audio.error?.message ?? null,
+        track: currentTrack.value,
+      });
     }
     loading.value = false;
     isPlaying.value = false;
@@ -686,14 +751,34 @@ export const usePlayerStore = defineStore('player', () => {
 
       const res = await musicApi.getMusicUrl(track.source, track.id, preferredBitrate.value);
       if (token !== loadToken) return;
+      const playbackUrl = resolvePlayableAudioUrl(res.url, res.localPath);
+      res.url = playbackUrl;
       if (!res.url) throw new Error('无法获取播放链接');
 
+      audio.crossOrigin = shouldUseAnonymousCors(track.source, res.localPath) ? 'anonymous' : null;
+      if (shouldDebugPlayback(track)) {
+        logPlaybackDebug('load-track-resolved', {
+          track,
+          apiUrl: res.url,
+          localPath: res.localPath ?? null,
+          playbackUrl,
+          crossOrigin: audio.crossOrigin,
+        });
+      }
       audio.src = res.url;
       audio.load();
 
       if (autoplay) {
         await audio.play();
         if (token !== loadToken) return;
+        if (shouldDebugPlayback(track)) {
+          logPlaybackDebug('audio-play-invoked', {
+            currentSrc: audio.currentSrc,
+            paused: audio.paused,
+            networkState: audio.networkState,
+            readyState: audio.readyState,
+          });
+        }
       }
 
       if (recordHistory) {
@@ -730,6 +815,15 @@ export const usePlayerStore = defineStore('player', () => {
       persistSession(true);
     } catch (e: unknown) {
       if (token !== loadToken) return;
+      if (shouldDebugPlayback(track)) {
+        logPlaybackError('load-track-failed', {
+          track,
+          error: e instanceof Error ? e.message : e,
+          currentSrc: audio.currentSrc,
+          networkState: audio.networkState,
+          readyState: audio.readyState,
+        });
+      }
       error.value = e instanceof Error ? e.message : '播放失败';
       loading.value = false;
     } finally {

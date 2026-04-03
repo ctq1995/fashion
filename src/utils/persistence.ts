@@ -36,6 +36,10 @@ function normalizeStorageKey(key: string) {
   return key;
 }
 
+function matchesAnyStoragePrefix(key: string, prefixes: string[]) {
+  return prefixes.some((prefix) => key.startsWith(prefix));
+}
+
 function storageKeyCandidates(key: string) {
   return [key];
 }
@@ -177,6 +181,32 @@ export function getStorageSnapshot(): Record<string, string> {
   return collectLocalEntries();
 }
 
+function collectManagedKeysByPrefixes(prefixes: string[]) {
+  const normalizedPrefixes = prefixes
+    .map((prefix) => normalizeStorageKey(prefix.trim()))
+    .filter(Boolean);
+
+  if (!normalizedPrefixes.length) return [];
+
+  if (backendInitialized) {
+    return Array.from(backendEntries.keys())
+      .filter((key) => matchesManagedStorageKey(key) && matchesAnyStoragePrefix(key, normalizedPrefixes));
+  }
+
+  if (typeof window === 'undefined') return [];
+
+  const keys: string[] = [];
+  for (let index = 0; index < window.localStorage.length; index++) {
+    const key = window.localStorage.key(index);
+    if (!key || !matchesManagedStorageKey(key) || !matchesAnyStoragePrefix(key, normalizedPrefixes)) {
+      continue;
+    }
+    keys.push(key);
+  }
+
+  return keys;
+}
+
 export async function chooseDirectory(startDirectory?: string | null) {
   if (!isTauriRuntime()) return null;
   return invoke<string | null>('pick_folder', {
@@ -197,6 +227,26 @@ export async function updateDownloadDirectory(path: string | null) {
   const preferences = await invoke<StoragePreferences>('set_download_directory', { path });
   storagePreferences = preferences;
   return preferences;
+}
+
+export async function clearManagedStoragePrefixes(prefixes: string[]) {
+  const keys = [...new Set(collectManagedKeysByPrefixes(prefixes))];
+  if (!keys.length) return 0;
+
+  if (backendInitialized) {
+    await invoke('remove_persistence_entries', { keys });
+    for (const key of keys) {
+      backendEntries.delete(key);
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    for (const key of keys) {
+      window.localStorage.removeItem(key);
+    }
+  }
+
+  return keys.length;
 }
 
 export function readVersionedStorage<T>(

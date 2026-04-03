@@ -54,4 +54,21 @@ describe('ui store', () => {
     expect(store.lyricSettings.highlightColor).toBe('#16D6A0');
     expect(store.lyricSettings.windowPosition).toEqual({ x: 128, y: 256 });
   });
+
+  it('adds gequbao to previously saved enabled sources', () => {
+    window.localStorage.setItem(
+      'fashion:enabled-sources',
+      JSON.stringify({
+        version: 1,
+        updatedAt: Date.now(),
+        data: ['netease', 'joox'],
+      }),
+    );
+
+    const store = useUiStore();
+
+    expect(store.enabledToolbarSources).toContain('netease');
+    expect(store.enabledToolbarSources).toContain('joox');
+    expect(store.enabledToolbarSources).toContain('gequbao');
+  });
 });
