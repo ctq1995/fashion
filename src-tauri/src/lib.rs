@@ -43,7 +43,7 @@ pub fn run() {
                 window_chrome::install(&window);
 
                 #[cfg(debug_assertions)]
-                if std::env::var_os("POLARIS_OPEN_DEVTOOLS").is_some() {
+                if std::env::var_os("FASHION_OPEN_DEVTOOLS").is_some() {
                     window.open_devtools();
                 }
             }

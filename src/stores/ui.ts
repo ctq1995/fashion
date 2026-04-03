@@ -1,7 +1,21 @@
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
-import { SOURCES, type MusicSource } from '@/api/music';
+import {
+  DEFAULT_ENABLED_SOURCES,
+  SOURCES,
+  getSourceMeta,
+  isSelectableSource,
+  type MusicSource,
+} from '@/api/music';
 import { readVersionedStorage, writeVersionedStorage } from '@/utils/persistence';
+import {
+  type DesktopLyricSettings,
+  type DesktopLyricWindowPosition,
+  DEFAULT_DESKTOP_LYRIC_SETTINGS,
+  isDesktopLyricSettings,
+  normalizeDesktopLyricSettings,
+  sameDesktopLyricSettings,
+} from '@/utils/desktopLyric';
 
 export type AppTheme = 'light' | 'dark';
 
@@ -9,7 +23,11 @@ const UI_STORAGE_VERSION = 1;
 const THEME_STORAGE_KEY = 'fashion:theme';
 const TOOLBAR_SOURCE_KEY = 'fashion:toolbar-source';
 const ENABLED_SOURCES_KEY = 'fashion:enabled-sources';
+const DESKTOP_LYRIC_SETTINGS_KEY = 'fashion:desktop-lyric-settings';
 const ALL_SOURCE_VALUES = SOURCES.map((item) => item.value);
+const SELECTABLE_SOURCE_VALUES = SOURCES
+  .filter((item) => item.selectable)
+  .map((item) => item.value);
 
 function isTheme(value: unknown): value is AppTheme {
   return value === 'light' || value === 'dark';
@@ -24,8 +42,8 @@ function sameSources(left: MusicSource[], right: MusicSource[]) {
 }
 
 function normalizeEnabledSources(value: MusicSource[]): MusicSource[] {
-  const normalized = ALL_SOURCE_VALUES.filter((source) => value.includes(source));
-  return normalized.length ? normalized : [...ALL_SOURCE_VALUES];
+  const normalized = SELECTABLE_SOURCE_VALUES.filter((source) => value.includes(source));
+  return normalized.length ? normalized : [...DEFAULT_ENABLED_SOURCES];
 }
 
 function readInitialTheme(): AppTheme {
@@ -39,7 +57,7 @@ function readInitialTheme(): AppTheme {
 function readEnabledSources(): MusicSource[] {
   return normalizeEnabledSources(
     readVersionedStorage<MusicSource[]>(ENABLED_SOURCES_KEY, UI_STORAGE_VERSION, {
-      fallback: [...ALL_SOURCE_VALUES],
+      fallback: [...DEFAULT_ENABLED_SOURCES],
       validate: (value): value is MusicSource[] => Array.isArray(value) && value.every(isMusicSource),
     }),
   );
@@ -53,6 +71,28 @@ function readStoredToolbarSource(): MusicSource | null {
   });
 }
 
+function readDesktopLyricSettings() {
+  return readVersionedStorage<DesktopLyricSettings>(DESKTOP_LYRIC_SETTINGS_KEY, UI_STORAGE_VERSION, {
+    fallback: DEFAULT_DESKTOP_LYRIC_SETTINGS,
+    validate: isDesktopLyricSettings,
+    migrateLegacy: (raw) => {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        const candidate = (
+          parsed
+          && typeof parsed === 'object'
+          && 'data' in parsed
+        )
+          ? (parsed as { data: unknown }).data
+          : parsed;
+        return normalizeDesktopLyricSettings(candidate as Partial<DesktopLyricSettings>);
+      } catch {
+        return null;
+      }
+    },
+  });
+}
+
 function resolveToolbarSource(source: MusicSource | null, enabledSources: MusicSource[]): MusicSource {
   if (source && enabledSources.includes(source)) return source;
   return enabledSources[0] ?? 'netease';
@@ -63,6 +103,7 @@ export const useUiStore = defineStore('ui', () => {
   const toolbarSearch = ref('');
   const toolbarSearchNonce = ref(0);
   const enabledToolbarSources = ref<MusicSource[]>(readEnabledSources());
+  const lyricSettings = ref<DesktopLyricSettings>(readDesktopLyricSettings());
   const toolbarSource = ref<MusicSource>(
     resolveToolbarSource(readStoredToolbarSource(), enabledToolbarSources.value),
   );
@@ -107,6 +148,20 @@ export const useUiStore = defineStore('ui', () => {
     { immediate: true },
   );
 
+  watch(
+    lyricSettings,
+    (value) => {
+      const normalized = normalizeDesktopLyricSettings(value);
+      if (!sameDesktopLyricSettings(normalized, value)) {
+        lyricSettings.value = normalized;
+        return;
+      }
+
+      writeVersionedStorage(DESKTOP_LYRIC_SETTINGS_KEY, UI_STORAGE_VERSION, normalized);
+    },
+    { deep: true, immediate: true },
+  );
+
   function toggleTheme() {
     theme.value = theme.value === 'light' ? 'dark' : 'light';
   }
@@ -125,6 +180,7 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   function setSourceEnabled(value: MusicSource, enabled: boolean) {
+    if (!isSelectableSource(value)) return;
     const next = new Set(enabledToolbarSources.value);
     if (enabled) next.add(value);
     else next.delete(value);
@@ -132,6 +188,9 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   function toggleSourceEnabled(value: MusicSource) {
+    if (!isSelectableSource(value)) {
+      return false;
+    }
     if (isSourceEnabled(value) && enabledToolbarSources.value.length === 1) {
       return false;
     }
@@ -148,12 +207,28 @@ export const useUiStore = defineStore('ui', () => {
     toolbarSearchNonce.value++;
   }
 
+  function setLyricSettings(next: Partial<DesktopLyricSettings>) {
+    lyricSettings.value = normalizeDesktopLyricSettings({
+      ...lyricSettings.value,
+      ...next,
+    });
+  }
+
+  function setDesktopLyricWindowPosition(position: DesktopLyricWindowPosition | null) {
+    setLyricSettings({ windowPosition: position });
+  }
+
+  function refreshLyricSettings() {
+    lyricSettings.value = readDesktopLyricSettings();
+  }
+
   return {
     theme,
     toolbarSearch,
     toolbarSearchNonce,
     toolbarSource,
     enabledToolbarSources,
+    lyricSettings,
     setTheme,
     toggleTheme,
     isSourceEnabled,
@@ -161,5 +236,9 @@ export const useUiStore = defineStore('ui', () => {
     toggleSourceEnabled,
     setToolbarSource,
     submitToolbarSearch,
+    setLyricSettings,
+    setDesktopLyricWindowPosition,
+    refreshLyricSettings,
+    getSourceMeta,
   };
 });

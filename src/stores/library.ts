@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
 import type { Track } from '@/stores/player';
+import { useMediaStore } from '@/stores/media';
 import { readVersionedStorage, writeVersionedStorage } from '@/utils/persistence';
 
 export interface CustomPlaylist {
@@ -91,8 +92,14 @@ function trackKey(track: Pick<Track, 'id' | 'source'>): string {
 }
 
 export const useLibraryStore = defineStore('library', () => {
-  const favorites = ref<Track[]>(readFavorites());
-  const playlists = ref<CustomPlaylist[]>(readPlaylists());
+  const media = useMediaStore();
+  const favorites = ref<Track[]>(readFavorites().map((track) => media.attachTrackCover(track)));
+  const playlists = ref<CustomPlaylist[]>(
+    readPlaylists().map((playlist) => ({
+      ...playlist,
+      tracks: playlist.tracks.map((track) => media.attachTrackCover(track)),
+    })),
+  );
 
   watch(favorites, (value) => {
     writeVersionedStorage(FAVORITES_STORAGE_KEY, FAVORITES_STORAGE_VERSION, value);
@@ -110,12 +117,13 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   function toggleFavorite(track: Track) {
+    const nextTrack = media.attachTrackCover(track);
     if (isFavorite(track)) {
       favorites.value = favorites.value.filter((item) => trackKey(item) !== trackKey(track));
       return;
     }
 
-    favorites.value = [track, ...favorites.value];
+    favorites.value = [nextTrack, ...favorites.value];
   }
 
   function removeFavorite(track: Pick<Track, 'id' | 'source'>) {
@@ -158,16 +166,29 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   function addTrackToPlaylist(playlistId: string, track: Track) {
+    const nextTrack = media.attachTrackCover(track);
     playlists.value = playlists.value.map((playlist) => {
       if (playlist.id !== playlistId) return playlist;
-      if (playlist.tracks.some((item) => trackKey(item) === trackKey(track))) {
-        return playlist;
+
+      const existingIndex = playlist.tracks.findIndex((item) => trackKey(item) === trackKey(track));
+      if (existingIndex >= 0) {
+        if (!nextTrack.coverUrl || playlist.tracks[existingIndex]?.coverUrl === nextTrack.coverUrl) {
+          return playlist;
+        }
+
+        return {
+          ...playlist,
+          updatedAt: Date.now(),
+          tracks: playlist.tracks.map((item, index) =>
+            index === existingIndex ? { ...item, coverUrl: nextTrack.coverUrl } : item,
+          ),
+        };
       }
 
       return {
         ...playlist,
         updatedAt: Date.now(),
-        tracks: [track, ...playlist.tracks],
+        tracks: [nextTrack, ...playlist.tracks],
       };
     });
   }
@@ -181,6 +202,50 @@ export const useLibraryStore = defineStore('library', () => {
         tracks: playlist.tracks.filter((item) => trackKey(item) !== trackKey(track)),
       };
     });
+  }
+
+  function syncTrackCover(track: Pick<Track, 'id' | 'source'>, coverUrl: string) {
+    let favoritesChanged = false;
+    const nextFavorites = favorites.value.map((item) => {
+      if (trackKey(item) !== trackKey(track) || item.coverUrl === coverUrl) {
+        return item;
+      }
+
+      favoritesChanged = true;
+      return { ...item, coverUrl };
+    });
+
+    if (favoritesChanged) {
+      favorites.value = nextFavorites;
+    }
+
+    let playlistsChanged = false;
+    const nextPlaylists = playlists.value.map((playlist) => {
+      let playlistChanged = false;
+      const nextTracks = playlist.tracks.map((item) => {
+        if (trackKey(item) !== trackKey(track) || item.coverUrl === coverUrl) {
+          return item;
+        }
+
+        playlistChanged = true;
+        return { ...item, coverUrl };
+      });
+
+      if (!playlistChanged) {
+        return playlist;
+      }
+
+      playlistsChanged = true;
+      return {
+        ...playlist,
+        tracks: nextTracks,
+        updatedAt: Date.now(),
+      };
+    });
+
+    if (playlistsChanged) {
+      playlists.value = nextPlaylists;
+    }
   }
 
   function exportPlaylist(playlistId: string) {
@@ -203,6 +268,7 @@ export const useLibraryStore = defineStore('library', () => {
     isFavorite,
     toggleFavorite,
     removeFavorite,
+    syncTrackCover,
     createPlaylist,
     deletePlaylist,
     updatePlaylist,

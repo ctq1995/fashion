@@ -130,8 +130,18 @@
           </div>
         </div>
 
-        <button class="icon-btn lyric-btn" @click="emit('open-lyric')" title="歌词">
-          <span class="lyric-glyph">词</span>
+        <button
+          class="icon-btn lyric-btn"
+          :class="{ active: props.desktopLyricOpen }"
+          :title="desktopLyricTitle"
+          @click="emit('toggle-desktop-lyric')"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+            <rect x="4" y="5" width="16" height="12" rx="3" />
+            <path d="M8 10h8" />
+            <path d="M8 13h5" />
+            <path d="M9 19h6" />
+          </svg>
         </button>
         <button class="icon-btn" @click="emit('open-playlist')" title="歌单">
           <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -158,10 +168,12 @@ const props = withDefaults(defineProps<{
   scene: 'light' | 'dark';
   lyricActive?: boolean;
   lyricFullscreen?: boolean;
+  desktopLyricOpen?: boolean;
   hidden?: boolean;
 }>(), {
   lyricActive: false,
   lyricFullscreen: false,
+  desktopLyricOpen: false,
   hidden: false,
 });
 
@@ -169,6 +181,7 @@ const emit = defineEmits<{
   'open-lyric': [];
   'open-playlist': [];
   'toggle-lyric-fullscreen': [];
+  'toggle-desktop-lyric': [];
 }>();
 
 const player = usePlayerStore();
@@ -192,6 +205,10 @@ const currentTrackFavorite = computed(() =>
 
 const lyricToggleTitle = computed(() =>
   props.lyricActive ? '收起歌词界面' : '展开歌词界面'
+);
+
+const desktopLyricTitle = computed(() =>
+  props.desktopLyricOpen ? '关闭桌面歌词' : '打开桌面歌词'
 );
 
 const modeLabel = computed(() => ({
@@ -846,11 +863,10 @@ onBeforeUnmount(() => {
   background: var(--accent);
 }
 
-.lyric-btn .lyric-glyph {
-  font-size: 23px;
-  line-height: 1;
-  font-weight: 600;
-  transform: translateY(-1px);
+.lyric-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(22, 214, 160, 0.14);
 }
 
 @media (max-width: 980px) {

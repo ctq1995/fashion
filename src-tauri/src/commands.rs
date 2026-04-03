@@ -24,6 +24,9 @@ const API_BASE_LO: &str = "https://music-api.gdstudio.xyz/api.php";
 const API_BASE_CN: &str = "https://music-api-cn.gdstudio.xyz/api.php";
 const API_BASE_HK: &str = "https://music-api-hk.gdstudio.xyz/api.php";
 const API_BASE_US: &str = "https://music-api-us.gdstudio.xyz/api.php";
+const API_REFERER: &str = "https://music.gdstudio.xyz/";
+const API_ORIGIN: &str = "https://music.gdstudio.xyz";
+const PROXY_BASE: &str = "https://music-proxy.gdstudio.org";
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Fashion/0.1";
 
 fn make_client() -> Result<Client, String> {
@@ -89,6 +92,45 @@ fn api_base_for_source(source: &str) -> &'static str {
     }
 }
 
+fn api_root_for_source(source: &str) -> &'static str {
+    match source_node(source) {
+        "cn" => "https://music-api-cn.gdstudio.xyz/",
+        "hk" => "https://music-api-hk.gdstudio.xyz/",
+        "us" => "https://music-api-us.gdstudio.xyz/",
+        _ => "https://music-api.gdstudio.xyz/",
+    }
+}
+
+fn is_cache_source(source: &str) -> bool {
+    matches!(strip_source_suffix(source), "ytmusic" | "deezer" | "spotify" | "apple")
+}
+
+fn needs_proxy(source: &str, url: &str) -> bool {
+    matches!(strip_source_suffix(source), "bilibili" | "kuwo")
+        || (strip_source_suffix(source) == "ytmusic" && url.contains("googlevideo.com/videoplayback"))
+}
+
+fn normalize_music_url(source: &str, raw_url: &str) -> String {
+    let mut url = raw_url.trim().to_string();
+    if url.is_empty() {
+        return url;
+    }
+
+    if is_cache_source(source) && !url.starts_with("http") {
+        url = format!("{}{}", api_root_for_source(source), url.trim_start_matches('/'));
+    }
+
+    if strip_source_suffix(source) == "kuwo" {
+        url = normalize_kuwo_url(&url);
+    }
+
+    if needs_proxy(source, &url) && !url.starts_with(PROXY_BASE) {
+        url = format!("{PROXY_BASE}/{url}");
+    }
+
+    url
+}
+
 fn signature_for_seed(seed: &str) -> String {
     let mut hasher = DefaultHasher::new();
     seed.hash(&mut hasher);
@@ -120,6 +162,8 @@ async fn fetch_json<T: DeserializeOwned>(client: &Client, url: Url) -> Result<T,
         .get(url)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/json")
+        .header("Referer", API_REFERER)
+        .header("Origin", API_ORIGIN)
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -400,10 +444,8 @@ pub async fn get_music_url(
 
     let mut result = fetch_json::<MusicUrl>(&client, url).await?;
 
-    if strip_source_suffix(&source) == "kuwo" {
-        if let Some(url) = result.url.as_deref() {
-            result.url = Some(normalize_kuwo_url(url));
-        }
+    if let Some(url) = result.url.as_deref() {
+        result.url = Some(normalize_music_url(&source, url));
     }
 
     Ok(result)

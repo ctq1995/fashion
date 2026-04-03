@@ -67,8 +67,10 @@
         :scene="isImmersiveScene ? 'dark' : 'light'"
         :lyric-active="isImmersiveScene"
         :lyric-fullscreen="isLyricFullscreen"
+        :desktop-lyric-open="desktopLyricVisible"
         :hidden="hideLyricChrome"
         @open-lyric="toggleLyricPanel"
+        @toggle-desktop-lyric="toggleDesktopLyricWindow"
         @open-playlist="playlistDrawerOpen = !playlistDrawerOpen"
         @toggle-lyric-fullscreen="toggleLyricFullscreen()"
       />
@@ -78,7 +80,11 @@
 
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { emitTo, listen } from '@tauri-apps/api/event';
+import { PhysicalPosition } from '@tauri-apps/api/dpi';
+import { availableMonitors } from '@tauri-apps/api/window';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue';
 import { usePlayerStore } from '@/stores/player';
 import { useUiStore } from '@/stores/ui';
 import TitleBar from '@/components/TitleBar.vue';
@@ -90,6 +96,27 @@ import HistoryPanel from '@/components/HistoryPanel.vue';
 import LyricPanel from '@/components/LyricPanel.vue';
 import SettingsPanel from '@/components/SettingsPanel.vue';
 import PlayerBar from '@/components/PlayerBar.vue';
+import {
+  DESKTOP_LYRIC_ACTION_EVENT,
+  DESKTOP_LYRIC_CLOSED_EVENT,
+  DESKTOP_LYRIC_MOVED_EVENT,
+  DESKTOP_LYRIC_READY_EVENT,
+  DESKTOP_LYRIC_STATE_EVENT,
+  DESKTOP_LYRIC_WINDOW_HEIGHT,
+  DESKTOP_LYRIC_WINDOW_LABEL,
+  DESKTOP_LYRIC_WINDOW_QUERY,
+  DESKTOP_LYRIC_WINDOW_WIDTH,
+  sameDesktopLyricSettings,
+  type DesktopLyricActionPayload,
+  type DesktopLyricSettings,
+  type DesktopLyricStatePayload,
+  type DesktopLyricWindowPosition,
+} from '@/utils/desktopLyric';
+import {
+  findTranslatedLine,
+  resolveLyricLineDuration,
+  resolveLyricLineProgress,
+} from '@/utils/lyrics';
 
 type Panel = 'search' | 'favorites' | 'history' | 'lyric' | 'settings';
 type NavKey = 'recommend' | 'discover' | 'favorites' | 'history' | 'settings';
@@ -110,6 +137,8 @@ const playlistDrawerOpen = ref(false);
 const isWindowFill = ref(false);
 const isLyricWindowFullscreen = ref(false);
 const showLyricChrome = ref(true);
+const desktopLyricVisible = ref(false);
+const desktopLyricPending = ref(false);
 
 const isImmersiveScene = computed(() => activePanel.value === 'lyric');
 const sceneClass = computed(() => ui.theme === 'dark' ? 'scene-dark' : 'scene-light');
@@ -184,11 +213,294 @@ function toggleLyricPanel() {
   navigateTo('lyric');
 }
 
+function buildDesktopLyricPayload(): DesktopLyricStatePayload {
+  const currentIndex = player.currentLyricIndex;
+  const currentLyricLine = currentIndex >= 0 ? player.lyricLines[currentIndex] ?? null : null;
+  const currentLineTime = currentLyricLine?.time ?? null;
+  const currentLineDuration = currentLyricLine
+    ? resolveLyricLineDuration(player.lyricLines, currentIndex)
+    : null;
+  const currentLine = currentLyricLine?.text ?? '';
+  const nextLine = player.lyricLines[currentIndex >= 0 ? currentIndex + 1 : 0]?.text ?? '';
+  const translatedLine = currentIndex >= 0
+    ? findTranslatedLine(player.lyricLines, player.tlyricLines, currentIndex)
+    : '';
+  const currentLineProgress = currentLyricLine
+    ? resolveLyricLineProgress(player.lyricLines, currentIndex, player.currentTime)
+    : null;
+  const settings: DesktopLyricSettings = {
+    ...ui.lyricSettings,
+    windowPosition: ui.lyricSettings.windowPosition
+      ? { ...ui.lyricSettings.windowPosition }
+      : null,
+  };
+
+  return {
+    trackTitle: player.currentTrack?.name ?? '',
+    trackArtist: player.currentTrack?.artist ?? '',
+    coverUrl: player.currentTrack?.coverUrl ?? null,
+    playbackTime: player.currentTime,
+    playbackUpdatedAt: player.playbackTimeUpdatedAt,
+    currentLine,
+    currentLineProgress,
+    currentLineTime,
+    currentLineDuration,
+    translatedLine,
+    nextLine,
+    hasTrack: !!player.currentTrack,
+    hasLyric: player.lyricLines.length > 0,
+    isPlaying: player.isPlaying,
+    settings,
+  };
+}
+
+function clearDesktopLyricSyncFrame() {
+  if (desktopLyricSyncFrame !== null) {
+    window.clearTimeout(desktopLyricSyncFrame);
+    desktopLyricSyncFrame = null;
+  }
+  desktopLyricLastSyncAt = 0;
+  lastDesktopLyricPayload = null;
+}
+
+function shouldSyncDesktopLyricImmediately(payload: DesktopLyricStatePayload) {
+  if (!lastDesktopLyricPayload) return true;
+
+  return (
+    lastDesktopLyricPayload.trackTitle !== payload.trackTitle ||
+    lastDesktopLyricPayload.trackArtist !== payload.trackArtist ||
+    lastDesktopLyricPayload.playbackTime > payload.playbackTime ||
+    lastDesktopLyricPayload.currentLine !== payload.currentLine ||
+    lastDesktopLyricPayload.currentLineTime !== payload.currentLineTime ||
+    lastDesktopLyricPayload.currentLineDuration !== payload.currentLineDuration ||
+    lastDesktopLyricPayload.translatedLine !== payload.translatedLine ||
+    lastDesktopLyricPayload.nextLine !== payload.nextLine ||
+    lastDesktopLyricPayload.hasTrack !== payload.hasTrack ||
+    lastDesktopLyricPayload.hasLyric !== payload.hasLyric ||
+    lastDesktopLyricPayload.isPlaying !== payload.isPlaying ||
+    !sameDesktopLyricSettings(lastDesktopLyricPayload.settings, payload.settings)
+  );
+}
+
+function scheduleDesktopLyricSync(payload: DesktopLyricStatePayload) {
+  pendingDesktopLyricPayload = payload;
+
+  if (!desktopLyricVisible.value) return;
+  const immediate = shouldSyncDesktopLyricImmediately(payload);
+
+  if (desktopLyricSyncFrame !== null) {
+    if (!immediate) return;
+    window.clearTimeout(desktopLyricSyncFrame);
+    desktopLyricSyncFrame = null;
+  }
+
+  const delay = immediate
+    ? 0
+    : Math.max(0, DESKTOP_LYRIC_SYNC_INTERVAL - (performance.now() - desktopLyricLastSyncAt));
+
+  desktopLyricSyncFrame = window.setTimeout(() => {
+    desktopLyricSyncFrame = null;
+    const nextPayload = pendingDesktopLyricPayload;
+    pendingDesktopLyricPayload = null;
+    if (!nextPayload || !desktopLyricVisible.value) return;
+
+    desktopLyricLastSyncAt = performance.now();
+    lastDesktopLyricPayload = {
+      ...nextPayload,
+      settings: {
+        ...nextPayload.settings,
+        windowPosition: nextPayload.settings.windowPosition
+          ? { ...nextPayload.settings.windowPosition }
+          : null,
+      },
+    };
+    void emitTo(DESKTOP_LYRIC_WINDOW_LABEL, DESKTOP_LYRIC_STATE_EVENT, nextPayload).catch((error) => {
+      console.error('desktop lyric sync failed', error);
+    });
+  }, delay);
+}
+
+async function syncDesktopLyricWindowState() {
+  try {
+    const lyricWindow = await WebviewWindow.getByLabel(DESKTOP_LYRIC_WINDOW_LABEL);
+    desktopLyricVisible.value = lyricWindow ? await lyricWindow.isVisible() : false;
+  } catch (error) {
+    desktopLyricVisible.value = false;
+    console.error('syncDesktopLyricWindowState failed', error);
+  } finally {
+    desktopLyricPending.value = false;
+  }
+}
+
+async function applyDesktopLyricWindowSettings(
+  lyricWindow: WebviewWindow,
+  settings: DesktopLyricSettings,
+) {
+  await Promise.allSettled([
+    lyricWindow.setAlwaysOnTop(settings.alwaysOnTop),
+    lyricWindow.setIgnoreCursorEvents(settings.locked),
+    lyricWindow.setFocusable(!settings.locked),
+  ]);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+async function restoreDesktopLyricWindowPosition(lyricWindow: WebviewWindow) {
+  const storedPosition = ui.lyricSettings.windowPosition;
+  if (!storedPosition) {
+    await lyricWindow.center();
+    return;
+  }
+
+  const monitors = await availableMonitors();
+  if (!monitors.length) {
+    await lyricWindow.setPosition(new PhysicalPosition(storedPosition.x, storedPosition.y));
+    return;
+  }
+
+  const targetMonitor = monitors.find((monitor) => {
+    const workArea = monitor.workArea;
+    return (
+      storedPosition.x >= workArea.position.x &&
+      storedPosition.x < workArea.position.x + workArea.size.width &&
+      storedPosition.y >= workArea.position.y &&
+      storedPosition.y < workArea.position.y + workArea.size.height
+    );
+  });
+
+  if (!targetMonitor) {
+    ui.setDesktopLyricWindowPosition(null);
+    await lyricWindow.center();
+    return;
+  }
+
+  const workArea = targetMonitor.workArea;
+  const maxX = workArea.position.x + Math.max(
+    0,
+    workArea.size.width - Math.round(DESKTOP_LYRIC_WINDOW_WIDTH * targetMonitor.scaleFactor),
+  );
+  const maxY = workArea.position.y + Math.max(
+    0,
+    workArea.size.height - Math.round(DESKTOP_LYRIC_WINDOW_HEIGHT * targetMonitor.scaleFactor),
+  );
+  const nextPosition = {
+    x: clamp(storedPosition.x, workArea.position.x, maxX),
+    y: clamp(storedPosition.y, workArea.position.y, maxY),
+  };
+
+  await lyricWindow.setPosition(new PhysicalPosition(nextPosition.x, nextPosition.y));
+
+  if (
+    nextPosition.x !== storedPosition.x
+    || nextPosition.y !== storedPosition.y
+  ) {
+    ui.setDesktopLyricWindowPosition(nextPosition);
+  }
+}
+
+async function openDesktopLyricWindow() {
+  if (desktopLyricPending.value) return;
+
+  desktopLyricPending.value = true;
+  ui.refreshLyricSettings();
+
+  try {
+    const existing = await WebviewWindow.getByLabel(DESKTOP_LYRIC_WINDOW_LABEL);
+    if (existing) {
+      await applyDesktopLyricWindowSettings(existing, ui.lyricSettings);
+      await existing.show();
+      desktopLyricVisible.value = true;
+      desktopLyricPending.value = false;
+      scheduleDesktopLyricSync(buildDesktopLyricPayload());
+      return;
+    }
+
+    const lyricWindow = new WebviewWindow(DESKTOP_LYRIC_WINDOW_LABEL, {
+      url: `/?${DESKTOP_LYRIC_WINDOW_QUERY}=1`,
+      title: 'Desktop Lyric',
+      width: DESKTOP_LYRIC_WINDOW_WIDTH,
+      height: DESKTOP_LYRIC_WINDOW_HEIGHT,
+      center: true,
+      transparent: true,
+      visible: false,
+      decorations: false,
+      alwaysOnTop: ui.lyricSettings.alwaysOnTop,
+      focus: !ui.lyricSettings.locked,
+      focusable: !ui.lyricSettings.locked,
+      skipTaskbar: true,
+      shadow: false,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+    });
+
+    lyricWindow.once('tauri://created', async () => {
+      desktopLyricVisible.value = true;
+      desktopLyricPending.value = false;
+      await applyDesktopLyricWindowSettings(lyricWindow, ui.lyricSettings);
+      await restoreDesktopLyricWindowPosition(lyricWindow);
+      await lyricWindow.show();
+      scheduleDesktopLyricSync(buildDesktopLyricPayload());
+    });
+
+    lyricWindow.once('tauri://error', (error) => {
+      desktopLyricVisible.value = false;
+      desktopLyricPending.value = false;
+      console.error('desktop lyric create failed', error);
+    });
+  } catch (error) {
+    desktopLyricVisible.value = false;
+    desktopLyricPending.value = false;
+    console.error('openDesktopLyricWindow failed', error);
+  }
+}
+
+async function closeDesktopLyricWindow() {
+  if (desktopLyricPending.value) return;
+
+  desktopLyricPending.value = true;
+  const existing = await WebviewWindow.getByLabel(DESKTOP_LYRIC_WINDOW_LABEL);
+  clearDesktopLyricSyncFrame();
+  pendingDesktopLyricPayload = null;
+
+  if (!existing) {
+    desktopLyricVisible.value = false;
+    desktopLyricPending.value = false;
+    return;
+  }
+
+  await existing.hide().catch((error) => {
+    console.error('closeDesktopLyricWindow failed', error);
+  });
+  desktopLyricVisible.value = false;
+  desktopLyricPending.value = false;
+}
+
+async function toggleDesktopLyricWindow() {
+  if (desktopLyricPending.value) return;
+
+  const existing = await WebviewWindow.getByLabel(DESKTOP_LYRIC_WINDOW_LABEL);
+  if (existing && await existing.isVisible()) {
+    await closeDesktopLyricWindow();
+    return;
+  }
+
+  await openDesktopLyricWindow();
+}
+
 let cleanupDomResize: null | (() => void) = null;
 let lyricChromeTimer: number | null = null;
+let cleanupDesktopLyricEvents: null | (() => void) = null;
+let desktopLyricSyncFrame: number | null = null;
+let pendingDesktopLyricPayload: DesktopLyricStatePayload | null = null;
+let desktopLyricLastSyncAt = 0;
+let lastDesktopLyricPayload: DesktopLyricStatePayload | null = null;
 let syncSeq = 0;
 let fullscreenPending = false;
 let toggleSeq = 0;
+const DESKTOP_LYRIC_SYNC_INTERVAL = 40;
 
 function clearLyricChromeTimer() {
   if (lyricChromeTimer !== null) {
@@ -262,6 +574,7 @@ async function toggleLyricFullscreen(force?: boolean) {
 
 onMounted(async () => {
   await syncWindowFillState();
+  await syncDesktopLyricWindowState();
 
   const onResize = () => { void syncWindowFillState(); };
   const onActivity = () => { if (isLyricFullscreen.value) showChrome(); };
@@ -277,12 +590,41 @@ onMounted(async () => {
     window.removeEventListener('pointerdown', onActivity);
     window.removeEventListener('keydown', onActivity);
   };
+
+  const unlistenReady = await listen(DESKTOP_LYRIC_READY_EVENT, () => {
+    desktopLyricVisible.value = true;
+    desktopLyricPending.value = false;
+    scheduleDesktopLyricSync(buildDesktopLyricPayload());
+  });
+  const unlistenClosed = await listen(DESKTOP_LYRIC_CLOSED_EVENT, () => {
+    clearDesktopLyricSyncFrame();
+    pendingDesktopLyricPayload = null;
+    desktopLyricVisible.value = false;
+    desktopLyricPending.value = false;
+  });
+  const unlistenAction = await listen<DesktopLyricActionPayload>(DESKTOP_LYRIC_ACTION_EVENT, (event) => {
+    if (event.payload.type !== 'toggle-always-on-top') return;
+    ui.setLyricSettings({ alwaysOnTop: !ui.lyricSettings.alwaysOnTop });
+  });
+  const unlistenMoved = await listen<DesktopLyricWindowPosition>(DESKTOP_LYRIC_MOVED_EVENT, (event) => {
+    ui.setDesktopLyricWindowPosition(event.payload);
+  });
+
+  cleanupDesktopLyricEvents = () => {
+    void unlistenReady();
+    void unlistenClosed();
+    void unlistenAction();
+    void unlistenMoved();
+  };
 });
 
 onBeforeUnmount(() => {
   cleanupDomResize?.();
   cleanupDomResize = null;
+  cleanupDesktopLyricEvents?.();
+  cleanupDesktopLyricEvents = null;
   clearLyricChromeTimer();
+  clearDesktopLyricSyncFrame();
 });
 
 // 全屏状态变化时重置 chrome 显示
@@ -300,6 +642,28 @@ watch(isImmersiveScene, (value) => {
   if (isLyricWindowFullscreen.value) {
     void toggleLyricFullscreen(false);
   }
+});
+
+watch(
+  () => ui.lyricSettings,
+  (value) => {
+    if (!desktopLyricVisible.value) return;
+
+    void WebviewWindow.getByLabel(DESKTOP_LYRIC_WINDOW_LABEL)
+      .then((lyricWindow) => {
+        if (!lyricWindow) return;
+        return applyDesktopLyricWindowSettings(lyricWindow, value);
+      })
+      .catch((error) => {
+        console.error('apply desktop lyric settings failed', error);
+      });
+  },
+  { deep: true },
+);
+
+watchEffect(() => {
+  if (!desktopLyricVisible.value) return;
+  scheduleDesktopLyricSync(buildDesktopLyricPayload());
 });
 
 function handleLyricFullscreenKeydown(event: KeyboardEvent) {

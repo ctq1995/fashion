@@ -3,10 +3,23 @@
   "identifier": "default",
   "description": "Enables the main window to access core window/event APIs and bundled plugins.",
   "windows": [
-    "main"
+    "main",
+    "desktop-lyric"
   ],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-available-monitors",
+    "core:window:allow-center",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-hide",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-focusable",
+    "core:window:allow-set-ignore-cursor-events",
+    "core:window:allow-set-position",
+    "core:window:allow-show",
+    "core:window:allow-start-dragging",
     "opener:default",
     "http:default"
   ]

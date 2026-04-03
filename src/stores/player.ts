@@ -1,9 +1,15 @@
 import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
 import {
-  musicApi, getArtistNames, getAlbumName, toStr,
+  AUTO_SWITCH_SOURCE_VALUES,
+  musicApi,
+  getArtistNames,
+  getAlbumName,
+  toStr,
   type SearchResult, type MusicSource,
 } from '@/api/music';
+import { useLibraryStore } from '@/stores/library';
+import { useMediaStore } from '@/stores/media';
 import { readVersionedStorage, writeVersionedStorage } from '@/utils/persistence';
 
 export type PlayMode = 'sequence' | 'random' | 'single';
@@ -19,11 +25,6 @@ const HISTORY_STORAGE_VERSION = 2;
 const SESSION_STORAGE_VERSION = 1;
 const PLAYBACK_RATE_STORAGE_VERSION = 1;
 const MAX_HISTORY_ITEMS = 100;
-
-// 自动换源候选列表（按优先级排列）
-const AUTO_SWITCH_SOURCES: MusicSource[] = [
-  'netease', 'kuwo', 'ytmusic', 'tidal', 'qobuz', 'bilibili',
-];
 
 export type PlaybackRate = (typeof PLAYBACK_RATES)[number];
 
@@ -222,6 +223,8 @@ function readInitialPlaybackRate(): PlaybackRate {
 }
 
 export const usePlayerStore = defineStore('player', () => {
+  const media = useMediaStore();
+  const library = useLibraryStore();
   const initialBitrate = readInitialBitrate();
   const initialSession = readInitialSession(initialBitrate);
 
@@ -229,12 +232,15 @@ export const usePlayerStore = defineStore('player', () => {
   audio.crossOrigin = 'anonymous';
   audio.preload = 'auto';
 
-  const queue = ref<Track[]>(initialSession.queue);
+  const queue = ref<Track[]>(initialSession.queue.map((track) => media.attachTrackCover(track)));
   const currentIndex = ref(initialSession.currentIndex);
-  const currentTrack = ref<Track | null>(initialSession.currentTrack);
+  const currentTrack = ref<Track | null>(
+    initialSession.currentTrack ? media.attachTrackCover(initialSession.currentTrack) : null,
+  );
   const isPlaying = ref(false);
   const duration = ref(0);
   const currentTime = ref(initialSession.currentTime);
+  const playbackTimeUpdatedAt = ref(Date.now());
   const volume = ref(initialSession.volume);
   const playMode = ref<PlayMode>(initialSession.playMode);
   const lyricLines = ref<{ time: number; text: string }[]>([]);
@@ -244,7 +250,7 @@ export const usePlayerStore = defineStore('player', () => {
   const error = ref('');
   const showLyric = ref(false);
   const preferredBitrate = ref<Bitrate>(initialSession.preferredBitrate);
-  const history = ref<HistoryItem[]>(readInitialHistory());
+  const history = ref<HistoryItem[]>(readInitialHistory().map((item) => media.attachTrackCover(item)));
 
   const playbackRate = ref<PlaybackRate>(readInitialPlaybackRate());
   const sleepTimerEndTime = ref<number | null>(null);
@@ -369,9 +375,14 @@ export const usePlayerStore = defineStore('player', () => {
     currentLyricIndex.value = idx;
   }
 
+  function syncPlaybackPosition(time = audio.currentTime) {
+    currentTime.value = time;
+    playbackTimeUpdatedAt.value = Date.now();
+    syncLyricIndexByTime(time);
+  }
+
   audio.addEventListener('timeupdate', () => {
-    currentTime.value = audio.currentTime;
-    syncLyricIndexByTime(audio.currentTime);
+    syncPlaybackPosition(audio.currentTime);
 
     syncCurrentHistory(false);
     persistSession();
@@ -384,8 +395,7 @@ export const usePlayerStore = defineStore('player', () => {
   audio.addEventListener('loadedmetadata', () => {
     if (pendingRestoreTime > 0) {
       audio.currentTime = Math.min(pendingRestoreTime, audio.duration || pendingRestoreTime);
-      currentTime.value = audio.currentTime;
-      syncLyricIndexByTime(currentTime.value);
+      syncPlaybackPosition(audio.currentTime);
       pendingRestoreTime = 0;
       persistSession(true);
     }
@@ -405,6 +415,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   audio.addEventListener('ended', () => {
     loading.value = false;
+    syncPlaybackPosition(audio.currentTime);
     syncCurrentHistory(true);
     playNext();
   });
@@ -423,6 +434,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   audio.addEventListener('pause', () => {
     isPlaying.value = false;
+    syncPlaybackPosition(audio.currentTime);
     syncCurrentHistory(false);
     persistSession(true);
     updateMediaSession();
@@ -452,7 +464,7 @@ export const usePlayerStore = defineStore('player', () => {
     isResettingAudio = false;
     isPlaying.value = false;
     duration.value = 0;
-    currentTime.value = 0;
+    syncPlaybackPosition(0);
   }
 
   function cancelPendingLoad() {
@@ -466,7 +478,11 @@ export const usePlayerStore = defineStore('player', () => {
       return;
     }
 
-    const candidates = AUTO_SWITCH_SOURCES.filter((s) => s !== track.source);
+    const candidates = AUTO_SWITCH_SOURCE_VALUES.filter((s) => s !== track.source);
+    if (!candidates.length) {
+      error.value = '当前没有可用的自动换源候选源';
+      return;
+    }
     const source = candidates[autoSwitchAttempt % candidates.length];
     autoSwitchAttempt++;
 
@@ -546,7 +562,7 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   function fromSearchResult(r: SearchResult): Track {
-    return {
+    return media.attachTrackCover({
       id: toStr(r.id),
       name: r.name,
       artist: getArtistNames(r.artist),
@@ -554,16 +570,52 @@ export const usePlayerStore = defineStore('player', () => {
       pic_id: toStr(r.pic_id),
       lyric_id: toStr(r.lyric_id),
       source: r.source,
-    };
+    });
+  }
+
+  function syncTrackCover(track: Pick<Track, 'id' | 'source'>, coverUrl: string) {
+    let queueChanged = false;
+    const nextQueue = queue.value.map((item) => {
+      if (item.id !== track.id || item.source !== track.source || item.coverUrl === coverUrl) {
+        return item;
+      }
+
+      queueChanged = true;
+      return { ...item, coverUrl };
+    });
+
+    if (queueChanged) {
+      queue.value = nextQueue;
+    }
+
+    if (currentTrack.value?.id === track.id && currentTrack.value?.source === track.source && currentTrack.value.coverUrl !== coverUrl) {
+      currentTrack.value = { ...currentTrack.value, coverUrl };
+      updateMediaSession();
+    }
+
+    let historyChanged = false;
+    const nextHistory = history.value.map((item) => {
+      if (item.id !== track.id || item.source !== track.source || item.coverUrl === coverUrl) {
+        return item;
+      }
+
+      historyChanged = true;
+      return { ...item, coverUrl };
+    });
+
+    if (historyChanged) {
+      history.value = nextHistory;
+    }
   }
 
   function pushHistory(track: Track) {
+    const nextTrack = media.attachTrackCover(track);
     const now = Date.now();
-    const historyId = `${track.source}-${track.id}-${now}`;
+    const historyId = `${nextTrack.source}-${nextTrack.id}-${now}`;
     currentHistoryId = historyId;
 
     const nextItem: HistoryItem = {
-      ...track,
+      ...nextTrack,
       historyId,
       playedAt: now,
       finishedAt: null,
@@ -577,7 +629,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   function playHistory(item: HistoryItem) {
     const { historyId: _historyId, playedAt: _playedAt, finishedAt: _finishedAt, lastPosition: _lastPosition, durationSnapshot: _durationSnapshot, completed: _completed, ...track } = item;
-    addToQueue(track, true);
+    addToQueue(media.attachTrackCover(track), true);
   }
 
   function removeHistory(historyId: string) {
@@ -602,6 +654,14 @@ export const usePlayerStore = defineStore('player', () => {
     error.value = '';
     autoSwitchAttempt = 0;
     syncCurrentHistory(false);
+    track = media.attachTrackCover(track);
+    if (index >= 0 && index < queue.value.length) {
+      queue.value[index] = media.attachTrackCover(queue.value[index] ?? track);
+      if (!queue.value[index].coverUrl && track.coverUrl) {
+        queue.value[index] = { ...queue.value[index], coverUrl: track.coverUrl };
+      }
+      track = queue.value[index];
+    }
     currentTrack.value = track;
     currentIndex.value = index;
     pendingRestoreTime = startTime;
@@ -611,14 +671,15 @@ export const usePlayerStore = defineStore('player', () => {
     currentLyricIndex.value = -1;
 
     try {
-      if (track.pic_id && !track.coverUrl) {
+      if (!track.coverUrl) {
         try {
-          const pic = await musicApi.getPicUrl(track.source, track.pic_id, 500);
+          const coverUrl = await media.ensureTrackCover(track);
           if (token !== loadToken) return;
-          if (pic.url) {
-            queue.value[index] = { ...track, coverUrl: pic.url };
-            currentTrack.value = queue.value[index];
-            track = queue.value[index];
+          if (coverUrl) {
+            syncTrackCover(track, coverUrl);
+            library.syncTrackCover(track, coverUrl);
+            track = media.attachTrackCover({ ...track, coverUrl });
+            currentTrack.value = track;
           }
         } catch {}
       }
@@ -679,14 +740,19 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   function addToQueue(track: Track, playNow = false) {
-    const idx = queue.value.findIndex((item) => item.id === track.id && item.source === track.source);
+    const nextTrack = media.attachTrackCover(track);
+    const idx = queue.value.findIndex((item) => item.id === nextTrack.id && item.source === nextTrack.source);
     if (idx >= 0) {
+      if (nextTrack.coverUrl && queue.value[idx]?.coverUrl !== nextTrack.coverUrl) {
+        syncTrackCover(nextTrack, nextTrack.coverUrl);
+        library.syncTrackCover(nextTrack, nextTrack.coverUrl);
+      }
       if (playNow) void loadTrack(queue.value[idx], idx, { autoplay: true });
       return;
     }
 
-    queue.value.push(track);
-    if (playNow) void loadTrack(track, queue.value.length - 1, { autoplay: true });
+    queue.value.push(nextTrack);
+    if (playNow) void loadTrack(nextTrack, queue.value.length - 1, { autoplay: true });
   }
 
   function playTrack(index: number) {
@@ -736,8 +802,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   function seek(time: number) {
     audio.currentTime = time;
-    currentTime.value = time;
-    syncLyricIndexByTime(time);
+    syncPlaybackPosition(time);
     syncCurrentHistory(false);
     persistSession(true);
   }
@@ -825,6 +890,7 @@ export const usePlayerStore = defineStore('player', () => {
     isPlaying,
     duration,
     currentTime,
+    playbackTimeUpdatedAt,
     volume,
     playMode,
     preferredBitrate,
@@ -840,6 +906,7 @@ export const usePlayerStore = defineStore('player', () => {
     error,
     showLyric,
     fromSearchResult,
+    syncTrackCover,
     addToQueue,
     playTrack,
     playNext,

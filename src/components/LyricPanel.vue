@@ -62,17 +62,20 @@
                 :style="lyricRowStyle(index)"
                 @click="player.seek(row.time)"
               >
-                <span class="lyric-main">
-                  <span class="lyric-main-base">{{ row.text || '' }}</span>
-                  <span
-                    v-if="index === activeLyricIndex"
-                    class="lyric-main-highlight"
-                    :style="lyricHighlightStyle(index)"
-                  >
-                    {{ row.text || '' }}
-                  </span>
-                </span>
-                <span v-if="translatedLine(index)" class="lyric-sub">{{ translatedLine(index) }}</span>
+                <LyricMarqueeText
+                  class="lyric-main"
+                  :text="row.text || ''"
+                  :active="index === activeLyricIndex"
+                  :progress="index === activeLyricIndex ? activeLineProgress * 100 : null"
+                  :speed="ui.lyricSettings.scrollSpeed"
+                />
+                <LyricMarqueeText
+                  v-if="translatedLine(index)"
+                  class="lyric-sub"
+                  :text="translatedLine(index)"
+                  :active="index === activeLyricIndex"
+                  :speed="ui.lyricSettings.scrollSpeed"
+                />
               </button>
 
               <div class="lyric-spacer" :style="{ height: `${lyricBottomSpacer}px` }" aria-hidden="true" />
@@ -104,11 +107,15 @@ import {
   type ComponentPublicInstance,
 } from 'vue';
 import { usePlayerStore } from '@/stores/player';
+import { useUiStore } from '@/stores/ui';
+import LyricMarqueeText from '@/components/LyricMarqueeText.vue';
+import {
+  buildTranslatedLineMap,
+  resolveLyricLineProgress,
+} from '@/utils/lyrics';
 
 type CreditLevel = 'highlight' | 'normal' | 'muted' | 'dimmed';
 
-const MIN_LINE_DURATION = 0.65;
-const MAX_LINE_DURATION = 4.2;
 const EDGE_SPACER_OFFSET = 52;
 const NORMAL_LYRIC_ANCHOR_RATIO = 0.56;
 const FULLSCREEN_LYRIC_ANCHOR_RATIO = 0.52;
@@ -122,6 +129,7 @@ const emit = defineEmits<{
 }>();
 
 const player = usePlayerStore();
+const ui = useUiStore();
 const visualTime = ref(0);
 const lyricViewport = ref<HTMLElement | null>(null);
 const lyricViewportHeight = ref(0);
@@ -159,39 +167,14 @@ const activeLyricIndex = computed(() => {
   return -1;
 });
 
-function resolveLyricLineDuration(index: number): number {
-  const current = player.lyricLines[index];
-  if (!current) return 2.4;
-
-  const prev = player.lyricLines[index - 1];
-  const next = player.lyricLines[index + 1];
-
-  let duration = 2.4;
-  if (next && next.time > current.time) {
-    duration = next.time - current.time;
-  } else if (prev && current.time > prev.time) {
-    duration = current.time - prev.time;
-  }
-
-  return Math.min(MAX_LINE_DURATION, Math.max(MIN_LINE_DURATION, duration));
-}
+const targetVisualTime = computed(() => player.currentTime);
 
 const activeLineProgress = computed(() => {
   const index = activeLyricIndex.value;
   if (index < 0 || index >= player.lyricLines.length) return 0;
 
-  const current = player.lyricLines[index];
-  const elapsed = visualTime.value - current.time;
-  const duration = resolveLyricLineDuration(index);
-  return Math.min(1, Math.max(0, elapsed / duration));
+  return resolveLyricLineProgress(player.lyricLines, index, visualTime.value);
 });
-
-function lyricHighlightStyle(index: number): CSSProperties | undefined {
-  if (index !== activeLyricIndex.value) return undefined;
-  return {
-    '--line-progress': `${(activeLineProgress.value * 100).toFixed(2)}%`,
-  } as CSSProperties;
-}
 
 function lyricRowStyle(index: number): CSSProperties {
   const active = activeLyricIndex.value;
@@ -216,25 +199,7 @@ function lyricRowStyle(index: number): CSSProperties {
 }
 
 const translatedLineMap = computed(() => {
-  const map = new Map<number, string>();
-  if (!player.lyricLines.length || !player.tlyricLines.length) return map;
-
-  for (let i = 0; i < player.lyricLines.length; i += 1) {
-    const current = player.lyricLines[i];
-    let bestText = '';
-    let bestDelta = 0.8;
-
-    for (const line of player.tlyricLines) {
-      const delta = Math.abs(line.time - current.time);
-      if (!line.text || delta >= bestDelta) continue;
-      bestDelta = delta;
-      bestText = line.text;
-    }
-
-    if (bestText) map.set(i, bestText);
-  }
-
-  return map;
+  return buildTranslatedLineMap(player.lyricLines, player.tlyricLines);
 });
 
 const lyricAnchorRatio = computed(() => (
@@ -305,14 +270,14 @@ function stopVisualTimeLoop() {
 
 function startVisualTimeLoop() {
   if (visualTimeRaf) return;
-  visualTime.value = player.currentTime;
+  visualTime.value = targetVisualTime.value;
   lastFrameMs = performance.now();
 
   const tick = (now: number) => {
     const dt = Math.min(0.08, Math.max(0, (now - lastFrameMs) / 1000));
     lastFrameMs = now;
 
-    const target = player.currentTime;
+    const target = targetVisualTime.value;
     if (player.isPlaying) {
       const predicted = visualTime.value + dt;
       visualTime.value = predicted + (target - predicted) * 0.2;
@@ -330,9 +295,11 @@ function startVisualTimeLoop() {
 }
 
 watch(
-  () => player.currentTime,
+  targetVisualTime,
   (value) => {
-    if (!player.isPlaying) visualTime.value = value;
+    if (!player.isPlaying) {
+      visualTime.value = value;
+    }
   },
 );
 
@@ -657,6 +624,7 @@ onBeforeUnmount(() => {
 .lyric-row {
   position: relative;
   width: 100%;
+  min-width: 0;
   padding: 6px 10px;
   border: 0;
   border-radius: 18px;
@@ -678,51 +646,30 @@ onBeforeUnmount(() => {
 }
 
 .lyric-main {
-  position: relative;
-  display: inline-block;
+  display: block;
+  width: 100%;
   max-width: 100%;
-}
-
-.lyric-main-base,
-.lyric-main-highlight {
-  display: inline-block;
+  min-width: 0;
   font-size: clamp(19px, 2.35vw, 31px);
   line-height: 1.16;
   font-weight: 600;
   letter-spacing: 0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: clip;
+  --marquee-highlight-color: var(--lp-accent-light);
 }
 
-.lyric-row.active .lyric-main-base,
-.lyric-row.active .lyric-main-highlight {
+.lyric-row.active .lyric-main {
   font-size: clamp(21px, 2.6vw, 34px);
   font-weight: 800;
 }
 
-.lyric-main-highlight {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: var(--line-progress, 0%);
-  height: 100%;
-  color: var(--lp-accent-light);
-  white-space: nowrap;
-  overflow: hidden;
-  pointer-events: none;
-  transition: width 80ms linear;
-}
-
 .lyric-sub {
   display: block;
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
   margin-top: 4px;
   font-size: 10px;
   color: var(--lp-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: clip;
 }
 
 .lyric-row.active .lyric-sub {

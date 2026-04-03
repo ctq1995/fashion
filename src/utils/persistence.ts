@@ -27,35 +27,17 @@ interface PersistenceBootstrap {
 }
 
 const STORAGE_KEY_PREFIX = 'fashion:';
-const LEGACY_STORAGE_KEY_PREFIXES = ['polaris:'];
-
-function storagePrefixes() {
-  return [STORAGE_KEY_PREFIX, ...LEGACY_STORAGE_KEY_PREFIXES];
-}
 
 function matchesManagedStorageKey(key: string) {
-  return storagePrefixes().some((prefix) => key.startsWith(prefix));
+  return key.startsWith(STORAGE_KEY_PREFIX);
 }
 
 function normalizeStorageKey(key: string) {
-  if (key.startsWith(STORAGE_KEY_PREFIX)) return key;
-
-  for (const legacyPrefix of LEGACY_STORAGE_KEY_PREFIXES) {
-    if (key.startsWith(legacyPrefix)) {
-      return `${STORAGE_KEY_PREFIX}${key.slice(legacyPrefix.length)}`;
-    }
-  }
-
   return key;
 }
 
 function storageKeyCandidates(key: string) {
-  if (!key.startsWith(STORAGE_KEY_PREFIX)) {
-    return [key];
-  }
-
-  const suffix = key.slice(STORAGE_KEY_PREFIX.length);
-  return [key, ...LEGACY_STORAGE_KEY_PREFIXES.map((prefix) => `${prefix}${suffix}`)];
+  return [key];
 }
 
 let backendInitialized = false;

@@ -20,23 +20,191 @@ export type MusicSource =
 
 export type SearchKind = 'track' | 'album';
 
-export const SOURCES: { value: MusicSource; label: string }[] = [
-  { value: 'netease', label: '网易云' },
-  { value: 'kuwo', label: '酷我' },
-  { value: 'joox', label: 'JOOX' },
-  { value: 'bilibili', label: 'Bilibili' },
-  { value: 'tencent', label: 'QQ 音乐' },
-  { value: 'migu', label: '咪咕' },
-  { value: 'kugou', label: '酷狗' },
-  { value: 'ximalaya', label: '喜马拉雅' },
-  { value: 'apple', label: 'Apple Music' },
-  { value: 'ytmusic', label: 'YouTube Music' },
-  { value: 'spotify', label: 'Spotify' },
-  { value: 'tidal', label: 'Tidal' },
-  { value: 'qobuz', label: 'Qobuz' },
-  { value: 'deezer', label: 'Deezer' },
-  { value: 'aisearch', label: 'AI 搜索' },
+export type MusicSourceState = 'available' | 'limited' | 'disabled';
+
+export interface MusicSourceMeta {
+  value: MusicSource;
+  label: string;
+  visible: boolean;
+  selectable: boolean;
+  defaultEnabled: boolean;
+  autoSwitch: boolean;
+  state: MusicSourceState;
+  note: string;
+}
+
+export const SOURCE_CATALOG: MusicSourceMeta[] = [
+  {
+    value: 'netease',
+    label: '网易云',
+    visible: true,
+    selectable: true,
+    defaultEnabled: true,
+    autoSwitch: true,
+    state: 'available',
+    note: '当前 GD Studio 接口最稳定。',
+  },
+  {
+    value: 'kuwo',
+    label: '酷我',
+    visible: true,
+    selectable: true,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'limited',
+    note: '搜索可用，但播放直链经常为空。',
+  },
+  {
+    value: 'joox',
+    label: 'JOOX',
+    visible: true,
+    selectable: true,
+    defaultEnabled: true,
+    autoSwitch: true,
+    state: 'available',
+    note: '当前 HK 节点可用。',
+  },
+  {
+    value: 'bilibili',
+    label: 'Bilibili',
+    visible: true,
+    selectable: true,
+    defaultEnabled: true,
+    autoSwitch: true,
+    state: 'available',
+    note: '当前可播放，但码率是动态的。',
+  },
+  {
+    value: 'tencent',
+    label: 'QQ 音乐',
+    visible: true,
+    selectable: false,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'disabled',
+    note: '当前后端返回 source unsupported。',
+  },
+  {
+    value: 'migu',
+    label: '咪咕',
+    visible: false,
+    selectable: false,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'disabled',
+    note: 'CN 节点当前返回 526。',
+  },
+  {
+    value: 'kugou',
+    label: '酷狗',
+    visible: false,
+    selectable: false,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'disabled',
+    note: 'CN 节点当前返回 526。',
+  },
+  {
+    value: 'ximalaya',
+    label: '喜马拉雅',
+    visible: false,
+    selectable: false,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'disabled',
+    note: 'CN 节点当前返回 526。',
+  },
+  {
+    value: 'apple',
+    label: 'Apple Music',
+    visible: true,
+    selectable: false,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'disabled',
+    note: '当前后端返回 source unsupported。',
+  },
+  {
+    value: 'ytmusic',
+    label: 'YouTube Music',
+    visible: true,
+    selectable: false,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'disabled',
+    note: 'US 节点当前返回 Invalid request。',
+  },
+  {
+    value: 'spotify',
+    label: 'Spotify',
+    visible: true,
+    selectable: false,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'disabled',
+    note: '当前后端返回 source unsupported。',
+  },
+  {
+    value: 'tidal',
+    label: 'Tidal',
+    visible: true,
+    selectable: false,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'disabled',
+    note: '当前后端返回 source unsupported。',
+  },
+  {
+    value: 'qobuz',
+    label: 'Qobuz',
+    visible: true,
+    selectable: false,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'disabled',
+    note: 'US 节点当前返回 Invalid request。',
+  },
+  {
+    value: 'deezer',
+    label: 'Deezer',
+    visible: false,
+    selectable: false,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'disabled',
+    note: '当前网页版已不再展示，接口也不可用。',
+  },
+  {
+    value: 'aisearch',
+    label: 'AI 搜索',
+    visible: false,
+    selectable: false,
+    defaultEnabled: false,
+    autoSwitch: false,
+    state: 'disabled',
+    note: '当前网页版已不再展示该入口。',
+  },
 ];
+
+export const SOURCES = SOURCE_CATALOG.filter((item) => item.visible);
+
+export const DEFAULT_ENABLED_SOURCES = SOURCE_CATALOG
+  .filter((item) => item.defaultEnabled)
+  .map((item) => item.value);
+
+export const AUTO_SWITCH_SOURCE_VALUES = SOURCE_CATALOG
+  .filter((item) => item.autoSwitch)
+  .map((item) => item.value);
+
+const SOURCE_META_MAP = new Map(SOURCE_CATALOG.map((item) => [item.value, item] as const));
+
+export function getSourceMeta(source: string) {
+  return SOURCE_META_MAP.get(source as MusicSource);
+}
+
+export function isSelectableSource(source: string): source is MusicSource {
+  return getSourceMeta(source)?.selectable ?? false;
+}
 
 export interface SearchResult {
   id: string | number;
@@ -58,6 +226,8 @@ export interface MusicUrl {
 export interface PicUrl {
   url?: string;
 }
+
+export const DEFAULT_PIC_SIZE = 500;
 
 export interface LyricResult {
   lyric?: string;
@@ -192,6 +362,18 @@ function keyOf(...parts: Array<string | number>) {
   return `fashion:cache:${parts.join(':')}`;
 }
 
+function picCacheKey(source: string, id: string, size = DEFAULT_PIC_SIZE) {
+  return keyOf('pic', source, id, size);
+}
+
+export function readCachedPicUrl(source: string, id: string, size = DEFAULT_PIC_SIZE): string | null {
+  const normalizedId = toStr(id);
+  if (!normalizedId) return null;
+
+  const cached = readCache(picCacheKey(source, normalizedId, size), isPicUrl);
+  return cached?.value.url ?? null;
+}
+
 export const musicApi = {
   search: (source: MusicSource, keyword: string, count = 30, page = 1, kind: SearchKind = 'track') => {
     const querySource = resolveSearchSource(source, kind);
@@ -209,9 +391,9 @@ export const musicApi = {
       () => invoke<MusicUrl>('get_music_url', { source, id, br }),
       isMusicUrl,
     ),
-  getPicUrl: (source: string, id: string, size = 500) =>
+  getPicUrl: (source: string, id: string, size = DEFAULT_PIC_SIZE) =>
     invokeWithCache(
-      keyOf('pic', source, id, size),
+      picCacheKey(source, id, size),
       1000 * 60 * 60 * 24 * 30,
       () => invoke<PicUrl>('get_pic_url', { source, id, size }),
       isPicUrl,

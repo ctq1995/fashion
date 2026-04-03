@@ -108,7 +108,7 @@
             <span class="row-index">{{ idx + 1 }}</span>
 
             <div class="row-cover">
-              <img v-if="coverCache[coverKey(item)]" :src="coverCache[coverKey(item)]" />
+              <img v-if="media.getTrackCoverUrl(item)" :src="media.getTrackCoverUrl(item) ?? undefined" />
               <div v-else class="cover-ph">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                   <circle cx="12" cy="12" r="10" />
@@ -207,7 +207,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
   musicApi,
   getArtistNames,
@@ -220,6 +220,7 @@ import {
 import DownloadButton from '@/components/DownloadButton.vue';
 import { usePlayerStore, type Track } from '@/stores/player';
 import { useLibraryStore } from '@/stores/library';
+import { useMediaStore } from '@/stores/media';
 import { useUiStore } from '@/stores/ui';
 import { readVersionedStorage, writeVersionedStorage } from '@/utils/persistence';
 
@@ -236,6 +237,7 @@ const MAX_RECENT_SEARCHES = 10;
 
 const player = usePlayerStore();
 const library = useLibraryStore();
+const media = useMediaStore();
 const ui = useUiStore();
 
 const keyword = ref('');
@@ -251,7 +253,6 @@ const recentSearches = ref(
     validate: (value): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string'),
   }).slice(0, MAX_RECENT_SEARCHES),
 );
-const coverCache = reactive<Record<string, string>>({});
 const panelBody = ref<HTMLElement | null>(null);
 const pickerOpen = ref(false);
 const pickerTrack = ref<Track | null>(null);
@@ -304,7 +305,7 @@ function isCurrentTrack(item: SearchResult) {
 }
 
 function toTrack(item: SearchResult): Track {
-  return {
+  return media.attachTrackCover({
     id: toStr(item.id),
     name: item.name,
     artist: getArtistNames(item.artist),
@@ -312,8 +313,7 @@ function toTrack(item: SearchResult): Track {
     pic_id: toStr(item.pic_id),
     lyric_id: toStr(item.lyric_id),
     source: item.source,
-    coverUrl: coverCache[coverKey(item)],
-  };
+  });
 }
 
 function playNow(item: SearchResult) {
@@ -329,16 +329,12 @@ function toggleFavorite(item: SearchResult) {
 }
 
 async function loadCover(item: SearchResult) {
-  const key = coverKey(item);
-  if (coverCache[key]) return;
-
-  const picId = toStr(item.pic_id) || toStr(item.id);
-  if (!picId) return;
-
   try {
-    const pic = await musicApi.getPicUrl(item.source, picId, 300);
-    if (pic.url) {
-      coverCache[key] = pic.url;
+    const track = toTrack(item);
+    const coverUrl = await media.ensureTrackCover(track);
+    if (coverUrl) {
+      player.syncTrackCover(track, coverUrl);
+      library.syncTrackCover(track, coverUrl);
     }
   } catch {
     // Ignore cover errors.
@@ -400,6 +396,9 @@ async function doSearch() {
     const data = await musicApi.search(source.value, normalized, 30, 1);
     if (token !== searchToken) return;
 
+    data.forEach((item) => {
+      media.primeTrackCover(item);
+    });
     results.value = data;
     recentSearches.value = [normalized, ...recentSearches.value.filter((item) => item !== normalized)].slice(0, MAX_RECENT_SEARCHES);
     writeVersionedStorage(RECENT_SEARCHES_KEY, RECENT_SEARCHES_VERSION, recentSearches.value);
