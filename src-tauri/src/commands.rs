@@ -1571,10 +1571,13 @@ pub async fn window_minimize(window: Window) -> Result<(), String> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = window;
-        return Ok(());
+        Ok(())
     }
 
-    window.minimize().map_err(|e| e.to_string())
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        window.minimize().map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
@@ -1582,10 +1585,10 @@ pub async fn window_maximize(window: Window) -> Result<(), String> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = window;
-        return Ok(());
+        Ok(())
     }
 
-    #[cfg(windows)]
+    #[cfg(all(windows, not(any(target_os = "android", target_os = "ios"))))]
     {
         let label = window.label().to_string();
         let mut store = maximized_bounds_store().lock().map_err(|e| e.to_string())?;
@@ -1636,7 +1639,7 @@ pub async fn window_maximize(window: Window) -> Result<(), String> {
         return Ok(());
     }
 
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(any(target_os = "android", target_os = "ios"))))]
     {
         if window.is_maximized().unwrap_or(false) {
             window.unmaximize().map_err(|e| e.to_string())
@@ -1651,13 +1654,16 @@ pub async fn window_get_state(window: Window) -> Result<WindowState, String> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = window;
-        return Ok(WindowState {
+        Ok(WindowState {
             is_fill: false,
             is_lyric_fullscreen: false,
-        });
+        })
     }
 
-    Ok(build_window_state(&window))
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        Ok(build_window_state(&window))
+    }
 }
 
 #[tauri::command]
@@ -1669,13 +1675,13 @@ pub async fn window_toggle_lyric_fullscreen(
     {
         let _ = window;
         let _ = force;
-        return Ok(WindowState {
+        Ok(WindowState {
             is_fill: false,
             is_lyric_fullscreen: false,
-        });
+        })
     }
 
-    #[cfg(windows)]
+    #[cfg(all(windows, not(any(target_os = "android", target_os = "ios"))))]
     {
         let label = window.label().to_string();
         let currently = lyric_fullscreen_store()
@@ -1745,7 +1751,7 @@ pub async fn window_toggle_lyric_fullscreen(
         return Ok(build_window_state(&window));
     }
 
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(any(target_os = "android", target_os = "ios"))))]
     {
         let target = force.unwrap_or(!window.is_fullscreen().unwrap_or(false));
         window.set_fullscreen(target).map_err(|e| e.to_string())?;
@@ -1758,10 +1764,13 @@ pub async fn window_close(window: Window) -> Result<(), String> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = window;
-        return Ok(());
+        Ok(())
     }
 
-    window.close().map_err(|e| e.to_string())
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        window.close().map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
@@ -1769,8 +1778,11 @@ pub async fn window_start_dragging(window: Window) -> Result<(), String> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = window;
-        return Ok(());
+        Ok(())
     }
 
-    window.start_dragging().map_err(|e| e.to_string())
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        window.start_dragging().map_err(|e| e.to_string())
+    }
 }

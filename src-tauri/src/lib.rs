@@ -39,10 +39,10 @@ pub fn run() {
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 if let Some(icon) = app.default_window_icon().cloned() {
-                    #[cfg(not(target_os = "android"))]
+                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     let _ = window.set_icon(icon);
 
-                    #[cfg(target_os = "android")]
+                    #[cfg(any(target_os = "android", target_os = "ios"))]
                     let _ = icon;
                 }
 
