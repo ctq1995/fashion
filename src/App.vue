@@ -544,7 +544,7 @@ async function closeDesktopLyricWindow() {
     return;
   }
 
-  await existing.hide().catch((error) => {
+  await existing.destroy().catch((error) => {
     console.error('closeDesktopLyricWindow failed', error);
   });
   desktopLyricVisible.value = false;

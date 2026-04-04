@@ -1,8 +1,17 @@
-use tauri::Manager;
+use tauri::{Manager, RunEvent, WebviewWindow};
 mod app_storage;
 mod commands;
 #[cfg(windows)]
 mod window_chrome;
+
+fn destroy_child_windows<R: tauri::Runtime>(main_window: &WebviewWindow<R>) {
+    let app = main_window.app_handle();
+    for (label, window) in app.webview_windows() {
+        if label != main_window.label() {
+            let _ = window.destroy();
+        }
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -46,6 +55,13 @@ pub fn run() {
                     let _ = icon;
                 }
 
+                let tracked_window = window.clone();
+                window.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                        destroy_child_windows(&tracked_window);
+                    }
+                });
+
                 #[cfg(windows)]
                 window_chrome::install(&window);
 
@@ -56,6 +72,13 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |app_handle, event| {
+            if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
+                if let Some(main_window) = app_handle.get_webview_window("main") {
+                    destroy_child_windows(&main_window);
+                }
+            }
+        });
 }

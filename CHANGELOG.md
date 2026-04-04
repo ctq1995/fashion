@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.4.0 - 2026-04-05
+
+- Fixed desktop app shutdown so the desktop lyric child window is destroyed instead of only being hidden, reducing lingering background processes after closing the app.
+- Added Tauri-side exit cleanup to destroy remaining child windows when the main window closes or the application exits.
+- Refined the mobile APK layout so the header, bottom player, and tab navigation reuse the desktop app's panel, accent, and spacing language.
+- Stabilized lyric highlighting by removing whole-row scaling and font jumps, keeping progress rendering inside the lyric text instead of making the active line feel like it floats.
+- Refreshed bundled app icons for desktop and mobile targets and skipped Windows MSI packaging on beta tags so GitHub beta builds can stay focused on Linux and Android artifacts.
+- Added a Windows Tauri build wrapper that maps prerelease versions such as `1.3.0-beta.6` to an MSI-compatible numeric prerelease during local bundling.
+
 ## v1.3.0-beta.6 - 2026-04-04
 
 - Refined the mobile APK layout so the header, bottom player, and tab navigation reuse the desktop app's panel, accent, and spacing language.

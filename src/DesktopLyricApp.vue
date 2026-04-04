@@ -368,8 +368,8 @@ async function closeWindow() {
   flushMovedPosition();
   clearControlsHideTimer();
   controlsVisible.value = false;
-  await currentWindow.hide().catch((error) => {
-    console.error('desktop lyric hide failed', error);
+  await currentWindow.destroy().catch((error) => {
+    console.error('desktop lyric destroy failed', error);
   });
   await emitTo('main', DESKTOP_LYRIC_CLOSED_EVENT).catch((error) => {
     console.error('desktop lyric close notify failed', error);
