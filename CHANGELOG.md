@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.0-beta.6 - 2026-04-04
+
+- Refined the mobile APK layout so the header, bottom player, and tab navigation reuse the desktop app's panel, accent, and spacing language.
+- Stabilized lyric highlighting by removing whole-row scaling and font jumps, keeping progress rendering inside the lyric text instead of making the active line feel like it floats.
+- Refreshed bundled app icons for desktop and mobile targets and skipped Windows MSI packaging on beta tags so GitHub beta builds can stay focused on Linux and Android artifacts.
+
 ## v1.3.0-beta.5 - 2026-04-04
 
 - Added `gequbao` as a new music source, including search, lyric/cover parsing, playback URL resolution, and download support.

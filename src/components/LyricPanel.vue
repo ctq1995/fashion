@@ -182,20 +182,17 @@ function lyricRowStyle(index: number): CSSProperties {
   const active = activeLyricIndex.value;
   if (active < 0) {
     return {
-      opacity: '0.78',
-      transform: 'scale(0.985)',
+      opacity: '0.82',
       zIndex: '1',
     };
   }
 
   const distance = Math.abs(index - active);
-  const opacity = index === active ? 1 : Math.max(0.22, 1 - distance * 0.12);
-  const scale = index === active ? 1.02 : Math.max(0.94, 1 - distance * 0.018);
+  const opacity = index === active ? 1 : Math.max(0.26, 1 - distance * 0.14);
   const zIndex = Math.max(1, 100 - distance);
 
   return {
     opacity: opacity.toFixed(3),
-    transform: `scale(${scale.toFixed(3)})`,
     zIndex: String(zIndex),
   };
 }
@@ -627,24 +624,25 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100%;
   min-width: 0;
-  padding: 6px 10px;
-  border: 0;
+  padding: 8px 12px;
+  border: 1px solid transparent;
   border-radius: 18px;
   text-align: left;
   color: var(--lp-text-muted);
   background: transparent;
-  transform-origin: left center;
-  will-change: transform, opacity;
-  transition: transform 0.22s ease, opacity 0.22s ease, color 0.2s ease, background 0.2s ease;
+  transition: opacity 0.22s ease, color 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .lyric-row:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
 .lyric-row.active {
   color: var(--lp-text);
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--lp-accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--lp-accent) 24%, rgba(255, 255, 255, 0.06));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lp-accent) 12%, transparent);
 }
 
 .lyric-main {
@@ -654,13 +652,13 @@ onBeforeUnmount(() => {
   min-width: 0;
   font-size: clamp(19px, 2.35vw, 31px);
   line-height: 1.16;
-  font-weight: 600;
+  font-weight: 650;
   letter-spacing: 0.01em;
+  transition: color 0.2s ease, font-weight 0.2s ease;
   --marquee-highlight-color: var(--lp-accent-light);
 }
 
 .lyric-row.active .lyric-main {
-  font-size: clamp(21px, 2.6vw, 34px);
   font-weight: 800;
 }
 
@@ -669,9 +667,10 @@ onBeforeUnmount(() => {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  margin-top: 4px;
+  margin-top: 6px;
   font-size: 10px;
   color: var(--lp-text-muted);
+  transition: color 0.2s ease, opacity 0.2s ease;
 }
 
 .lyric-row.active .lyric-sub {
@@ -763,7 +762,6 @@ onBeforeUnmount(() => {
 
   .lyric-row {
     text-align: center;
-    transform-origin: center center;
   }
 
   .credit-row {
@@ -784,7 +782,7 @@ onBeforeUnmount(() => {
 
   .lyric-row.active .lyric-main-base,
   .lyric-row.active .lyric-main-highlight {
-    font-size: 18px;
+    font-size: 16px;
   }
 
   .credit-row {

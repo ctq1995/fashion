@@ -2,82 +2,123 @@
   <div
     class="app-shell"
     :data-theme="ui.theme"
-    :class="[sceneClass, { 'window-fill': isWindowFill, immersive: isImmersiveScene }]"
+    :class="[sceneClass, { 'window-fill': isWindowFill, immersive: isImmersiveScene, 'mobile-shell': isMobileLayout }]"
   >
     <div class="bg-blur" :style="blurStyle" />
     <div
       class="app-layout"
-      :class="{ immersive: isImmersiveScene, 'window-fill': isWindowFill }"
+      :class="{ immersive: isImmersiveScene, 'window-fill': isWindowFill, mobile: isMobileLayout }"
     >
-      <div class="workspace" :class="{ immersive: isImmersiveScene }">
-        <Sidebar
-          v-if="!isImmersiveScene"
-          :active="activeNav"
-          :scene="isImmersiveScene ? 'dark' : 'light'"
-          @update:active="navigateTo"
-        />
-        <div class="main-stack">
-          <TitleBar
-            :active-panel="activePanel"
-            :can-go-back="canGoBack"
-            :can-go-forward="canGoForward"
-            :scene="isImmersiveScene ? 'dark' : 'light'"
-            :window-fill="isWindowFill"
-            :hidden="hideLyricChrome"
-            :lyric-fullscreen="isLyricFullscreen"
-            :show-window-controls="supportsWindowControls"
-            :allow-window-dragging="supportsWindowControls"
-            :show-lyric-window-toggle="supportsWindowControls"
-            @back="goBack"
-            @forward="goForward"
-            @search="handleToolbarSearch"
-            @open-settings="navigateTo('settings')"
-            @toggle-lyric-fullscreen="toggleLyricFullscreen()"
-          />
-          <div class="content-area" :class="{ immersive: isImmersiveScene }">
-            <Transition name="fade" mode="out-in">
-              <SearchPanel
-                v-if="activePanel === 'search'"
-                key="search"
-                :mode="searchMode"
+      <template v-if="isMobileLayout">
+        <div class="mobile-layout" :class="{ immersive: isImmersiveScene }">
+          <div class="mobile-scroll app-scroll" :class="{ immersive: isImmersiveScene }">
+            <MobileHeader
+              :active-panel="activePanel"
+              :immersive="isImmersiveScene"
+              @search="handleMobileSearch"
+              @open-settings="navigateTo('settings')"
+              @open-playlist="playlistDrawerOpen = true"
+              @open-lyric="toggleLyricPanel"
+            />
+            <div class="mobile-content-shell" :class="{ immersive: isImmersiveScene }">
+              <AppPanels
+                :active-panel="activePanel"
+                :search-mode="searchMode"
+                :lyric-fullscreen="isLyricFullscreen"
                 @open-library="playlistDrawerOpen = true"
                 @open-history="navigateTo('history')"
-              />
-              <FavoritesPanel v-else-if="activePanel === 'favorites'" key="favorites" />
-              <HistoryPanel v-else-if="activePanel === 'history'" key="history" />
-              <LyricPanel
-                v-else-if="activePanel === 'lyric'"
-                key="lyric"
-                :fullscreen="isLyricFullscreen"
                 @toggle-fullscreen="toggleLyricFullscreen(false)"
               />
-              <SettingsPanel v-else-if="activePanel === 'settings'" key="settings" />
-            </Transition>
+            </div>
+          </div>
+
+          <Transition name="drawer-fade">
+            <div
+              v-if="playlistDrawerOpen"
+              class="playlist-overlay mobile"
+              @click.self="playlistDrawerOpen = false"
+            >
+              <PlaylistPanel @close="playlistDrawerOpen = false" />
+            </div>
+          </Transition>
+
+          <div class="mobile-bottom-stack">
+            <MobilePlayerDock
+              :immersive="isImmersiveScene"
+              :hidden="hideLyricChrome"
+              @open-lyric="toggleLyricPanel"
+              @open-playlist="playlistDrawerOpen = !playlistDrawerOpen"
+            />
+            <MobileTabBar
+              v-if="!hideLyricChrome"
+              :active-panel="activePanel"
+              @navigate="navigateTo"
+            />
           </div>
         </div>
+      </template>
 
-        <Transition name="drawer-fade">
-          <div
-            v-if="playlistDrawerOpen"
-            class="playlist-overlay"
-            @click.self="playlistDrawerOpen = false"
-          >
-            <PlaylistPanel @close="playlistDrawerOpen = false" />
+      <template v-else>
+        <div class="workspace" :class="{ immersive: isImmersiveScene }">
+          <Sidebar
+            v-if="!isImmersiveScene"
+            :active="activeNav"
+            :scene="isImmersiveScene ? 'dark' : 'light'"
+            @update:active="navigateTo"
+          />
+          <div class="main-stack">
+            <TitleBar
+              :active-panel="activePanel"
+              :can-go-back="canGoBack"
+              :can-go-forward="canGoForward"
+              :scene="isImmersiveScene ? 'dark' : 'light'"
+              :window-fill="isWindowFill"
+              :hidden="hideLyricChrome"
+              :lyric-fullscreen="isLyricFullscreen"
+              :show-window-controls="supportsWindowControls"
+              :allow-window-dragging="supportsWindowControls"
+              :show-lyric-window-toggle="supportsWindowControls"
+              @back="goBack"
+              @forward="goForward"
+              @search="handleToolbarSearch"
+              @open-settings="navigateTo('settings')"
+              @toggle-lyric-fullscreen="toggleLyricFullscreen()"
+            />
+            <div class="content-area" :class="{ immersive: isImmersiveScene }">
+              <AppPanels
+                :active-panel="activePanel"
+                :search-mode="searchMode"
+                :lyric-fullscreen="isLyricFullscreen"
+                @open-library="playlistDrawerOpen = true"
+                @open-history="navigateTo('history')"
+                @toggle-fullscreen="toggleLyricFullscreen(false)"
+              />
+            </div>
           </div>
-        </Transition>
-      </div>
-      <PlayerBar
-        :scene="isImmersiveScene ? 'dark' : 'light'"
-        :lyric-active="isImmersiveScene"
-        :lyric-fullscreen="isLyricFullscreen"
-        :desktop-lyric-open="supportsDesktopLyricWindow && desktopLyricVisible"
-        :show-desktop-lyric-button="supportsDesktopLyricWindow"
-        :hidden="hideLyricChrome"
-        @open-lyric="toggleLyricPanel"
-        @toggle-desktop-lyric="toggleDesktopLyricWindow"
-        @open-playlist="playlistDrawerOpen = !playlistDrawerOpen"
-        @toggle-lyric-fullscreen="toggleLyricFullscreen()"
-      />
+
+          <Transition name="drawer-fade">
+            <div
+              v-if="playlistDrawerOpen"
+              class="playlist-overlay"
+              @click.self="playlistDrawerOpen = false"
+            >
+              <PlaylistPanel @close="playlistDrawerOpen = false" />
+            </div>
+          </Transition>
+        </div>
+        <PlayerBar
+          :scene="isImmersiveScene ? 'dark' : 'light'"
+          :lyric-active="isImmersiveScene"
+          :lyric-fullscreen="isLyricFullscreen"
+          :desktop-lyric-open="supportsDesktopLyricWindow && desktopLyricVisible"
+          :show-desktop-lyric-button="supportsDesktopLyricWindow"
+          :hidden="hideLyricChrome"
+          @open-lyric="toggleLyricPanel"
+          @toggle-desktop-lyric="toggleDesktopLyricWindow"
+          @open-playlist="playlistDrawerOpen = !playlistDrawerOpen"
+          @toggle-lyric-fullscreen="toggleLyricFullscreen()"
+        />
+      </template>
     </div>
   </div>
 </template>
@@ -89,17 +130,16 @@ import { PhysicalPosition } from '@tauri-apps/api/dpi';
 import { availableMonitors } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue';
+import AppPanels from '@/components/AppPanels.vue';
+import MobileHeader from '@/components/MobileHeader.vue';
+import MobilePlayerDock from '@/components/MobilePlayerDock.vue';
+import MobileTabBar from '@/components/MobileTabBar.vue';
+import PlayerBar from '@/components/PlayerBar.vue';
+import PlaylistPanel from '@/components/PlaylistPanel.vue';
+import Sidebar from '@/components/Sidebar.vue';
+import TitleBar from '@/components/TitleBar.vue';
 import { usePlayerStore } from '@/stores/player';
 import { useUiStore } from '@/stores/ui';
-import TitleBar from '@/components/TitleBar.vue';
-import Sidebar from '@/components/Sidebar.vue';
-import SearchPanel from '@/components/SearchPanel.vue';
-import FavoritesPanel from '@/components/FavoritesPanel.vue';
-import PlaylistPanel from '@/components/PlaylistPanel.vue';
-import HistoryPanel from '@/components/HistoryPanel.vue';
-import LyricPanel from '@/components/LyricPanel.vue';
-import SettingsPanel from '@/components/SettingsPanel.vue';
-import PlayerBar from '@/components/PlayerBar.vue';
 import { useRuntimeInfo } from '@/utils/runtime';
 import {
   DESKTOP_LYRIC_ACTION_EVENT,
@@ -147,6 +187,7 @@ const desktopLyricVisible = ref(false);
 const desktopLyricPending = ref(false);
 
 const isImmersiveScene = computed(() => activePanel.value === 'lyric');
+const isMobileLayout = computed(() => runtime.isMobile);
 const sceneClass = computed(() => ui.theme === 'dark' ? 'scene-dark' : 'scene-light');
 const supportsWindowControls = computed(() => runtime.supportsWindowControls);
 const supportsDesktopLyricWindow = computed(() => runtime.supportsDesktopLyricWindow);
@@ -207,6 +248,13 @@ function goForward() {
 function handleToolbarSearch(value: string) {
   ui.submitToolbarSearch(value);
   setPanel('search');
+}
+
+function handleMobileSearch() {
+  activeNav.value = 'recommend';
+  searchMode.value = 'recommend';
+  setPanel('search');
+  playlistDrawerOpen.value = false;
 }
 
 function toggleLyricPanel() {
@@ -760,6 +808,10 @@ onBeforeUnmount(() => {
   border-radius: 0;
 }
 
+.app-shell.mobile-shell {
+  border-radius: 0;
+}
+
 .app-shell::after {
   content: '';
   position: absolute;
@@ -777,6 +829,10 @@ onBeforeUnmount(() => {
 }
 
 .app-shell.immersive::after {
+  box-shadow: none;
+}
+
+.app-shell.mobile-shell::after {
   box-shadow: none;
 }
 
@@ -831,6 +887,11 @@ onBeforeUnmount(() => {
 
 .app-layout.immersive {
   border-radius: 0;
+}
+
+.app-layout.mobile {
+  background: transparent;
+  box-shadow: none;
 }
 
 .scene-light .app-layout {
@@ -890,6 +951,59 @@ onBeforeUnmount(() => {
   padding: 0;
 }
 
+.mobile-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 12px 12px;
+}
+
+.mobile-layout.immersive {
+  padding-top: 10px;
+}
+
+.mobile-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 2px;
+}
+
+.mobile-scroll.immersive {
+  gap: 12px;
+}
+
+.mobile-content-shell {
+  min-height: 420px;
+  border-radius: 30px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel-strong) 90%, white 4%), rgba(255, 255, 255, 0.04));
+  border: 1px solid color-mix(in srgb, var(--border) 80%, white 8%);
+  box-shadow:
+    0 24px 48px rgba(10, 20, 19, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(24px);
+}
+
+.mobile-content-shell.immersive {
+  min-height: 0;
+  flex: 1;
+  background: rgba(9, 18, 17, 0.72);
+}
+
+.mobile-bottom-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: max(2px, env(safe-area-inset-bottom, 0px));
+}
+
 .playlist-overlay {
   position: absolute;
   inset: 0;
@@ -897,6 +1011,73 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   background: linear-gradient(90deg, rgba(0, 0, 0, 0), var(--overlay-mask));
   z-index: 20;
+}
+
+.playlist-overlay.mobile {
+  align-items: flex-end;
+  justify-content: stretch;
+  padding: 0 8px 8px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(7, 13, 12, 0.58));
+}
+
+.playlist-overlay.mobile :deep(.playlist-drawer) {
+  width: 100%;
+  height: min(72vh, 680px);
+  margin: 0;
+  border-radius: 28px 28px 22px 22px;
+}
+
+.mobile-content-shell :deep(.search-panel),
+.mobile-content-shell :deep(.favorites-panel),
+.mobile-content-shell :deep(.history-panel),
+.mobile-content-shell :deep(.settings-panel),
+.mobile-content-shell :deep(.lyric-panel) {
+  height: 100%;
+}
+
+.mobile-content-shell :deep(.search-panel .empty-view) {
+  padding: 18px 16px 14px;
+  gap: 18px;
+}
+
+.mobile-content-shell :deep(.search-panel .empty-hero) {
+  padding: 20px;
+  box-shadow: none;
+}
+
+.mobile-content-shell :deep(.search-panel .empty-copy h2) {
+  font-size: 24px;
+}
+
+.mobile-content-shell :deep(.search-panel .history-card),
+.mobile-content-shell :deep(.favorites-topbar),
+.mobile-content-shell :deep(.history-topbar),
+.mobile-content-shell :deep(.settings-card) {
+  border-radius: 22px;
+}
+
+.mobile-content-shell :deep(.result-header) {
+  padding: 18px 16px 10px;
+}
+
+.mobile-content-shell :deep(.panel-body) {
+  padding: 0 8px 14px;
+}
+
+.mobile-content-shell :deep(.settings-panel) {
+  padding: 14px;
+}
+
+.mobile-content-shell :deep(.lyric-panel) {
+  padding: 18px 14px 14px;
+}
+
+.mobile-content-shell.immersive :deep(.lyric-panel) {
+  padding: 10px 10px 8px;
+}
+
+.mobile-content-shell :deep(.lyric-stage) {
+  max-width: none;
 }
 
 .drawer-fade-enter-active,
@@ -907,5 +1088,27 @@ onBeforeUnmount(() => {
 .drawer-fade-enter-from,
 .drawer-fade-leave-to {
   opacity: 0;
+}
+
+@media (max-width: 640px) {
+  .mobile-layout {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .mobile-content-shell {
+    border-radius: 26px;
+  }
+
+  .playlist-overlay.mobile {
+    padding-left: 4px;
+    padding-right: 4px;
+    padding-bottom: 4px;
+  }
+
+  .playlist-overlay.mobile :deep(.playlist-drawer) {
+    height: min(76vh, 720px);
+    border-radius: 26px 26px 18px 18px;
+  }
 }
 </style>
