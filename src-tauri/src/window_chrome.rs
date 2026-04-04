@@ -102,7 +102,11 @@ fn apply_windows_11_corners<R: Runtime>(window: &WebviewWindow<R>, fill_bounds: 
         return;
     };
 
-    let preference = if fill_bounds { DWMWCP_DONOTROUND } else { DWMWCP_ROUND };
+    let preference = if fill_bounds {
+        DWMWCP_DONOTROUND
+    } else {
+        DWMWCP_ROUND
+    };
     let _ = unsafe {
         DwmSetWindowAttribute(
             hwnd,

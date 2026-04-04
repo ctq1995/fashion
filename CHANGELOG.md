@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.3 - 2026-04-04
+## v1.3.0-beta.1 - 2026-04-04
 
 - Added `gequbao` as a new music source, including search, lyric/cover parsing, playback URL resolution, and download support.
 - Fixed `gequbao` playback by handling Kuwo direct links, local cached audio playback, and source-specific CORS behavior.

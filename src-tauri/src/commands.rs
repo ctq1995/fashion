@@ -8,8 +8,8 @@ use std::{
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
-    time::{SystemTime, UNIX_EPOCH},
     time::Duration,
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Window};
 use tokio::time::sleep;
@@ -144,6 +144,21 @@ pub struct CacheClearResult {
     bytes_freed: u64,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeInfo {
+    os: String,
+    is_mobile: bool,
+}
+
+#[tauri::command]
+pub fn get_runtime_info() -> RuntimeInfo {
+    RuntimeInfo {
+        os: std::env::consts::OS.to_string(),
+        is_mobile: cfg!(mobile),
+    }
+}
+
 fn strip_source_suffix(source: &str) -> &str {
     source
         .strip_suffix("_album")
@@ -180,12 +195,16 @@ fn api_root_for_source(source: &str) -> &'static str {
 }
 
 fn is_cache_source(source: &str) -> bool {
-    matches!(strip_source_suffix(source), "ytmusic" | "deezer" | "spotify" | "apple")
+    matches!(
+        strip_source_suffix(source),
+        "ytmusic" | "deezer" | "spotify" | "apple"
+    )
 }
 
 fn needs_proxy(source: &str, url: &str) -> bool {
     matches!(strip_source_suffix(source), "bilibili" | "kuwo")
-        || (strip_source_suffix(source) == "ytmusic" && url.contains("googlevideo.com/videoplayback"))
+        || (strip_source_suffix(source) == "ytmusic"
+            && url.contains("googlevideo.com/videoplayback"))
 }
 
 fn normalize_music_url(source: &str, raw_url: &str) -> String {
@@ -195,7 +214,11 @@ fn normalize_music_url(source: &str, raw_url: &str) -> String {
     }
 
     if is_cache_source(source) && !url.starts_with("http") {
-        url = format!("{}{}", api_root_for_source(source), url.trim_start_matches('/'));
+        url = format!(
+            "{}{}",
+            api_root_for_source(source),
+            url.trim_start_matches('/')
+        );
     }
 
     if strip_source_suffix(source) == "kuwo" {
@@ -324,10 +347,7 @@ async fn cache_audio_file(
         debug_source_log(
             source,
             "cache-hit",
-            format!(
-                "id={id} br={bitrate} path={}",
-                cached.path.display()
-            ),
+            format!("id={id} br={bitrate} path={}", cached.path.display()),
         );
         return Ok(cached);
     }
@@ -335,7 +355,10 @@ async fn cache_audio_file(
     debug_source_log(
         source,
         "cache-fetch-start",
-        format!("id={id} br={bitrate} remote={}", shorten_debug_value(remote_url)),
+        format!(
+            "id={id} br={bitrate} remote={}",
+            shorten_debug_value(remote_url)
+        ),
     );
 
     let source_dir = audio_cache_source_dir(app, source)?;
@@ -572,8 +595,12 @@ async fn post_form_json<T: DeserializeOwned>(
         return Err(format!("Request failed ({status}): {snippet}"));
     }
 
-    serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse response: {e} | body: {}", &text[..text.len().min(300)]))
+    serde_json::from_str(&text).map_err(|e| {
+        format!(
+            "Failed to parse response: {e} | body: {}",
+            &text[..text.len().min(300)]
+        )
+    })
 }
 
 fn is_gequbao_source(source: &str) -> bool {
@@ -609,9 +636,15 @@ where
         .join(joiner)
 }
 
-fn parse_gequbao_search_results(html: &str, count: u32, page: u32) -> Result<Vec<SearchResult>, String> {
+fn parse_gequbao_search_results(
+    html: &str,
+    count: u32,
+    page: u32,
+) -> Result<Vec<SearchResult>, String> {
     let document = Html::parse_document(html);
-    let row_selector = selector("div.card.mb-1 div.card-text > div.row.no-gutters.py-2d5.border-top.align-items-center")?;
+    let row_selector = selector(
+        "div.card.mb-1 div.card-text > div.row.no-gutters.py-2d5.border-top.align-items-center",
+    )?;
     let link_selector = selector("a[href^=\"/music/\"]")?;
     let title_selector = selector("span.text-primary")?;
     let artist_selector = selector("small.text-jade")?;
@@ -658,7 +691,11 @@ fn parse_gequbao_search_results(html: &str, count: u32, page: u32) -> Result<Vec
 
     let page = page.max(1);
     let start = ((page - 1) * count) as usize;
-    Ok(results.into_iter().skip(start).take(count as usize).collect())
+    Ok(results
+        .into_iter()
+        .skip(start)
+        .take(count as usize)
+        .collect())
 }
 
 fn normalize_gequbao_cover_url(raw: &str) -> Option<String> {
@@ -729,7 +766,9 @@ fn parse_gequbao_lyric(html: &str) -> Result<String, String> {
         .replace("<br/>", "\n")
         .replace("<br>", "\n");
     let without_tags = strip_html_tags(&raw);
-    Ok(normalize_lyric_text(&decode_basic_html_entities(&without_tags)))
+    Ok(normalize_lyric_text(&decode_basic_html_entities(
+        &without_tags,
+    )))
 }
 
 fn decode_js_string(raw: &str) -> Result<String, String> {
@@ -763,7 +802,10 @@ fn parse_gequbao_app_data(html: &str) -> Result<GequbaoAppData, String> {
     serde_json::from_str(&decoded).map_err(|e| format!("Failed to parse gequbao appData: {e}"))
 }
 
-async fn fetch_gequbao_music_detail(client: &Client, id: &str) -> Result<GequbaoMusicDetail, String> {
+async fn fetch_gequbao_music_detail(
+    client: &Client,
+    id: &str,
+) -> Result<GequbaoMusicDetail, String> {
     let path = format!("/music/{id}");
     let html = fetch_text(client, gequbao_url(&path)?, Some(GEQUBAO_BASE)).await?;
     let app_data = parse_gequbao_app_data(&html)?;
@@ -896,9 +938,8 @@ async fn convert_kuwo_play_url(client: &Client, raw_url: &str) -> Result<String,
         return Ok(trimmed.to_string());
     }
 
-    let response = serde_json::from_str::<KuwoConvertUrlData>(&body).map_err(|error| {
-        format!("Failed to parse Kuwo play url conversion response: {error}")
-    })?;
+    let response = serde_json::from_str::<KuwoConvertUrlData>(&body)
+        .map_err(|error| format!("Failed to parse Kuwo play url conversion response: {error}"))?;
     if response.code != 200 {
         return Err(response
             .msg
@@ -935,7 +976,11 @@ async fn get_gequbao_music_url(client: &Client, id: &str) -> Result<MusicUrl, St
         debug_source_log(
             "gequbao",
             "play-url-failed",
-            format!("id={id} code={} msg={}", response.code, response.msg.as_deref().unwrap_or("")),
+            format!(
+                "id={id} code={} msg={}",
+                response.code,
+                response.msg.as_deref().unwrap_or("")
+            ),
         );
         return Err(response
             .msg
@@ -1286,7 +1331,10 @@ pub async fn get_music_url(
         debug_source_log(
             &source,
             "get-music-url-cache-fill-queued",
-            format!("id={id} br={br} remote={}", shorten_debug_value(&remote_url)),
+            format!(
+                "id={id} br={br} remote={}",
+                shorten_debug_value(&remote_url)
+            ),
         );
         spawn_audio_cache_fill(app, source, id, br, remote_url);
     }
@@ -1520,11 +1568,23 @@ pub async fn search_once(keyword: String, source: String) -> Result<Vec<SearchRe
 
 #[tauri::command]
 pub async fn window_minimize(window: Window) -> Result<(), String> {
+    #[cfg(mobile)]
+    {
+        let _ = window;
+        return Ok(());
+    }
+
     window.minimize().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn window_maximize(window: Window) -> Result<(), String> {
+    #[cfg(mobile)]
+    {
+        let _ = window;
+        return Ok(());
+    }
+
     #[cfg(windows)]
     {
         let label = window.label().to_string();
@@ -1588,6 +1648,15 @@ pub async fn window_maximize(window: Window) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn window_get_state(window: Window) -> Result<WindowState, String> {
+    #[cfg(mobile)]
+    {
+        let _ = window;
+        return Ok(WindowState {
+            is_fill: false,
+            is_lyric_fullscreen: false,
+        });
+    }
+
     Ok(build_window_state(&window))
 }
 
@@ -1596,6 +1665,16 @@ pub async fn window_toggle_lyric_fullscreen(
     window: Window,
     force: Option<bool>,
 ) -> Result<WindowState, String> {
+    #[cfg(mobile)]
+    {
+        let _ = window;
+        let _ = force;
+        return Ok(WindowState {
+            is_fill: false,
+            is_lyric_fullscreen: false,
+        });
+    }
+
     #[cfg(windows)]
     {
         let label = window.label().to_string();
@@ -1604,7 +1683,10 @@ pub async fn window_toggle_lyric_fullscreen(
             .map_err(|e| e.to_string())?
             .contains_key(&label);
         let target = force.unwrap_or(!currently);
-        eprintln!("[fullscreen] window_toggle_lyric_fullscreen: force={:?} currently={} target={}", force, currently, target);
+        eprintln!(
+            "[fullscreen] window_toggle_lyric_fullscreen: force={:?} currently={} target={}",
+            force, currently, target
+        );
 
         if target == currently {
             return Ok(build_window_state(&window));
@@ -1673,10 +1755,22 @@ pub async fn window_toggle_lyric_fullscreen(
 
 #[tauri::command]
 pub async fn window_close(window: Window) -> Result<(), String> {
+    #[cfg(mobile)]
+    {
+        let _ = window;
+        return Ok(());
+    }
+
     window.close().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn window_start_dragging(window: Window) -> Result<(), String> {
+    #[cfg(mobile)]
+    {
+        let _ = window;
+        return Ok(());
+    }
+
     window.start_dragging().map_err(|e| e.to_string())
 }

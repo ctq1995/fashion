@@ -5,8 +5,10 @@ import DesktopLyricApp from './DesktopLyricApp.vue';
 import './styles/global.css';
 import { initializePersistence } from '@/utils/persistence';
 import { isDesktopLyricWindowMode } from '@/utils/desktopLyric';
+import { initializeRuntimeInfo } from '@/utils/runtime';
 
 async function bootstrap() {
+  await initializeRuntimeInfo();
   await initializePersistence();
 
   const RootComponent =

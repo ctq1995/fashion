@@ -6,9 +6,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+
+#[cfg(not(mobile))]
+use rfd::FileDialog;
 
 const CONFIG_FILE_NAME: &str = "storage-preferences.json";
 const SNAPSHOT_FILE_NAME: &str = "persistence-state.json";
@@ -300,10 +302,19 @@ pub fn set_download_directory(
 
 #[tauri::command]
 pub fn pick_folder(start_directory: Option<String>) -> Result<Option<String>, String> {
-    let mut dialog = FileDialog::new();
-    if let Some(start_directory) = normalize_optional_path(start_directory) {
-        dialog = dialog.set_directory(PathBuf::from(start_directory));
+    #[cfg(mobile)]
+    {
+        let _ = start_directory;
+        return Ok(None);
     }
 
-    Ok(dialog.pick_folder().map(|path| path.display().to_string()))
+    #[cfg(not(mobile))]
+    {
+        let mut dialog = FileDialog::new();
+        if let Some(start_directory) = normalize_optional_path(start_directory) {
+            dialog = dialog.set_directory(PathBuf::from(start_directory));
+        }
+
+        Ok(dialog.pick_folder().map(|path| path.display().to_string()))
+    }
 }

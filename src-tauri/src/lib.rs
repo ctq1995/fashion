@@ -20,6 +20,7 @@ pub fn run() {
             commands::get_recommend_playlist,
             commands::search_once,
             commands::download_music,
+            commands::get_runtime_info,
             commands::window_get_state,
             commands::window_toggle_lyric_fullscreen,
             app_storage::load_persistence_bootstrap,

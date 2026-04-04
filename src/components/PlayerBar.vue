@@ -131,6 +131,7 @@
         </div>
 
         <button
+          v-if="props.showDesktopLyricButton"
           class="icon-btn lyric-btn"
           :class="{ active: props.desktopLyricOpen }"
           :title="desktopLyricTitle"
@@ -169,11 +170,13 @@ const props = withDefaults(defineProps<{
   lyricActive?: boolean;
   lyricFullscreen?: boolean;
   desktopLyricOpen?: boolean;
+  showDesktopLyricButton?: boolean;
   hidden?: boolean;
 }>(), {
   lyricActive: false,
   lyricFullscreen: false,
   desktopLyricOpen: false,
+  showDesktopLyricButton: true,
   hidden: false,
 });
 

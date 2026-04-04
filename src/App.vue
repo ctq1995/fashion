@@ -25,6 +25,9 @@
             :window-fill="isWindowFill"
             :hidden="hideLyricChrome"
             :lyric-fullscreen="isLyricFullscreen"
+            :show-window-controls="supportsWindowControls"
+            :allow-window-dragging="supportsWindowControls"
+            :show-lyric-window-toggle="supportsWindowControls"
             @back="goBack"
             @forward="goForward"
             @search="handleToolbarSearch"
@@ -67,7 +70,8 @@
         :scene="isImmersiveScene ? 'dark' : 'light'"
         :lyric-active="isImmersiveScene"
         :lyric-fullscreen="isLyricFullscreen"
-        :desktop-lyric-open="desktopLyricVisible"
+        :desktop-lyric-open="supportsDesktopLyricWindow && desktopLyricVisible"
+        :show-desktop-lyric-button="supportsDesktopLyricWindow"
         :hidden="hideLyricChrome"
         @open-lyric="toggleLyricPanel"
         @toggle-desktop-lyric="toggleDesktopLyricWindow"
@@ -96,6 +100,7 @@ import HistoryPanel from '@/components/HistoryPanel.vue';
 import LyricPanel from '@/components/LyricPanel.vue';
 import SettingsPanel from '@/components/SettingsPanel.vue';
 import PlayerBar from '@/components/PlayerBar.vue';
+import { useRuntimeInfo } from '@/utils/runtime';
 import {
   DESKTOP_LYRIC_ACTION_EVENT,
   DESKTOP_LYRIC_CLOSED_EVENT,
@@ -127,6 +132,7 @@ type WindowState = {
 
 const player = usePlayerStore();
 const ui = useUiStore();
+const runtime = useRuntimeInfo();
 
 const activePanel = ref<Panel>('search');
 const activeNav = ref<NavKey>('recommend');
@@ -142,6 +148,8 @@ const desktopLyricPending = ref(false);
 
 const isImmersiveScene = computed(() => activePanel.value === 'lyric');
 const sceneClass = computed(() => ui.theme === 'dark' ? 'scene-dark' : 'scene-light');
+const supportsWindowControls = computed(() => runtime.supportsWindowControls);
+const supportsDesktopLyricWindow = computed(() => runtime.supportsDesktopLyricWindow);
 const isLyricFullscreen = computed(() => isImmersiveScene.value && isLyricWindowFullscreen.value);
 const hideLyricChrome = computed(() => isLyricFullscreen.value && !showLyricChrome.value);
 
@@ -283,6 +291,7 @@ function shouldSyncDesktopLyricImmediately(payload: DesktopLyricStatePayload) {
 }
 
 function scheduleDesktopLyricSync(payload: DesktopLyricStatePayload) {
+  if (!supportsDesktopLyricWindow.value) return;
   pendingDesktopLyricPayload = payload;
 
   if (!desktopLyricVisible.value) return;
@@ -321,6 +330,12 @@ function scheduleDesktopLyricSync(payload: DesktopLyricStatePayload) {
 }
 
 async function syncDesktopLyricWindowState() {
+  if (!supportsDesktopLyricWindow.value) {
+    desktopLyricVisible.value = false;
+    desktopLyricPending.value = false;
+    return;
+  }
+
   try {
     const lyricWindow = await WebviewWindow.getByLabel(DESKTOP_LYRIC_WINDOW_LABEL);
     desktopLyricVisible.value = lyricWindow ? await lyricWindow.isVisible() : false;
@@ -336,6 +351,8 @@ async function applyDesktopLyricWindowSettings(
   lyricWindow: WebviewWindow,
   settings: DesktopLyricSettings,
 ) {
+  if (!supportsDesktopLyricWindow.value) return;
+
   await Promise.allSettled([
     lyricWindow.setAlwaysOnTop(settings.alwaysOnTop),
     lyricWindow.setIgnoreCursorEvents(settings.locked),
@@ -348,6 +365,8 @@ function clamp(value: number, min: number, max: number) {
 }
 
 async function restoreDesktopLyricWindowPosition(lyricWindow: WebviewWindow) {
+  if (!supportsDesktopLyricWindow.value) return;
+
   const storedPosition = ui.lyricSettings.windowPosition;
   if (!storedPosition) {
     await lyricWindow.center();
@@ -401,6 +420,7 @@ async function restoreDesktopLyricWindowPosition(lyricWindow: WebviewWindow) {
 }
 
 async function openDesktopLyricWindow() {
+  if (!supportsDesktopLyricWindow.value) return;
   if (desktopLyricPending.value) return;
 
   desktopLyricPending.value = true;
@@ -458,6 +478,11 @@ async function openDesktopLyricWindow() {
 }
 
 async function closeDesktopLyricWindow() {
+  if (!supportsDesktopLyricWindow.value) {
+    desktopLyricVisible.value = false;
+    desktopLyricPending.value = false;
+    return;
+  }
   if (desktopLyricPending.value) return;
 
   desktopLyricPending.value = true;
@@ -479,6 +504,7 @@ async function closeDesktopLyricWindow() {
 }
 
 async function toggleDesktopLyricWindow() {
+  if (!supportsDesktopLyricWindow.value) return;
   if (desktopLyricPending.value) return;
 
   const existing = await WebviewWindow.getByLabel(DESKTOP_LYRIC_WINDOW_LABEL);
@@ -523,6 +549,12 @@ function showChrome() {
 }
 
 async function syncWindowFillState() {
+  if (!supportsWindowControls.value) {
+    isWindowFill.value = false;
+    isLyricWindowFullscreen.value = false;
+    return;
+  }
+
   const seq = ++syncSeq;
   try {
     const state = await invoke<WindowState>('window_get_state');
@@ -535,6 +567,12 @@ async function syncWindowFillState() {
 }
 
 async function toggleLyricFullscreen(force?: boolean) {
+  if (!supportsWindowControls.value) {
+    isWindowFill.value = false;
+    isLyricWindowFullscreen.value = false;
+    return;
+  }
+
   const target = force ?? !isLyricWindowFullscreen.value;
   console.log('[fullscreen] toggleLyricFullscreen called, target=', target, 'current=', isLyricWindowFullscreen.value, 'pending=', fullscreenPending);
   // 目标状态与当前一致则忽略（乐观更新后的重复调用）
@@ -576,8 +614,14 @@ onMounted(async () => {
   await syncWindowFillState();
   await syncDesktopLyricWindowState();
 
-  const onResize = () => { void syncWindowFillState(); };
-  const onActivity = () => { if (isLyricFullscreen.value) showChrome(); };
+  const onResize = () => {
+    if (!supportsWindowControls.value) return;
+    void syncWindowFillState();
+  };
+  const onActivity = () => {
+    if (!supportsWindowControls.value || !isLyricFullscreen.value) return;
+    showChrome();
+  };
 
   window.addEventListener('resize', onResize);
   window.addEventListener('pointermove', onActivity);
@@ -590,6 +634,11 @@ onMounted(async () => {
     window.removeEventListener('pointerdown', onActivity);
     window.removeEventListener('keydown', onActivity);
   };
+
+  if (!supportsDesktopLyricWindow.value) {
+    cleanupDesktopLyricEvents = null;
+    return;
+  }
 
   const unlistenReady = await listen(DESKTOP_LYRIC_READY_EVENT, () => {
     desktopLyricVisible.value = true;
@@ -647,6 +696,7 @@ watch(isImmersiveScene, (value) => {
 watch(
   () => ui.lyricSettings,
   (value) => {
+    if (!supportsDesktopLyricWindow.value) return;
     if (!desktopLyricVisible.value) return;
 
     void WebviewWindow.getByLabel(DESKTOP_LYRIC_WINDOW_LABEL)
@@ -662,11 +712,13 @@ watch(
 );
 
 watchEffect(() => {
+  if (!supportsDesktopLyricWindow.value) return;
   if (!desktopLyricVisible.value) return;
   scheduleDesktopLyricSync(buildDesktopLyricPayload());
 });
 
 function handleLyricFullscreenKeydown(event: KeyboardEvent) {
+  if (!supportsWindowControls.value) return;
   if (!isImmersiveScene.value) return;
 
   if (event.key === 'F11') {

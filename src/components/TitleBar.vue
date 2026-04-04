@@ -114,22 +114,24 @@
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82L4.21 7.1a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </button>
-        <button type="button" class="window-btn" @click="minimize">
-          <svg width="10" height="10" viewBox="0 0 11 11">
-            <rect x="0.5" y="5" width="10" height="1.5" rx="0.75" fill="currentColor" />
-          </svg>
-        </button>
-        <button type="button" class="window-btn" @click="maximize">
-          <svg width="10" height="10" viewBox="0 0 11 11">
-            <rect x="1" y="1" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none" />
-          </svg>
-        </button>
-        <button type="button" class="window-btn close" @click="close">
-          <svg width="10" height="10" viewBox="0 0 11 11">
-            <line x1="1" y1="1" x2="10" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-            <line x1="10" y1="1" x2="1" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-          </svg>
-        </button>
+        <template v-if="props.showWindowControls">
+          <button type="button" class="window-btn" @click="minimize">
+            <svg width="10" height="10" viewBox="0 0 11 11">
+              <rect x="0.5" y="5" width="10" height="1.5" rx="0.75" fill="currentColor" />
+            </svg>
+          </button>
+          <button type="button" class="window-btn" @click="maximize">
+            <svg width="10" height="10" viewBox="0 0 11 11">
+              <rect x="1" y="1" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none" />
+            </svg>
+          </button>
+          <button type="button" class="window-btn close" @click="close">
+            <svg width="10" height="10" viewBox="0 0 11 11">
+              <line x1="1" y1="1" x2="10" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              <line x1="10" y1="1" x2="1" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+          </button>
+        </template>
       </div>
     </template>
 
@@ -143,7 +145,7 @@
       </div>
       <div class="titlebar-drag-slot" aria-hidden="true" />
       <div class="immersive-right" data-no-drag @mousedown.stop>
-        <button type="button" class="window-btn" @click="$emit('toggle-lyric-fullscreen')">
+        <button v-if="props.showLyricWindowToggle" type="button" class="window-btn" @click="$emit('toggle-lyric-fullscreen')">
           <svg
             v-if="!lyricFullscreen"
             width="10"
@@ -177,22 +179,24 @@
             <line x1="21" y1="21" x2="14" y2="14" />
           </svg>
         </button>
-        <button type="button" class="window-btn" @click="minimize">
-          <svg width="10" height="10" viewBox="0 0 11 11">
-            <rect x="0.5" y="5" width="10" height="1.5" rx="0.75" fill="currentColor" />
-          </svg>
-        </button>
-        <button type="button" class="window-btn" @click="maximize">
-          <svg width="10" height="10" viewBox="0 0 11 11">
-            <rect x="1" y="1" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none" />
-          </svg>
-        </button>
-        <button type="button" class="window-btn close" @click="close">
-          <svg width="10" height="10" viewBox="0 0 11 11">
-            <line x1="1" y1="1" x2="10" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-            <line x1="10" y1="1" x2="1" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-          </svg>
-        </button>
+        <template v-if="props.showWindowControls">
+          <button type="button" class="window-btn" @click="minimize">
+            <svg width="10" height="10" viewBox="0 0 11 11">
+              <rect x="0.5" y="5" width="10" height="1.5" rx="0.75" fill="currentColor" />
+            </svg>
+          </button>
+          <button type="button" class="window-btn" @click="maximize">
+            <svg width="10" height="10" viewBox="0 0 11 11">
+              <rect x="1" y="1" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none" />
+            </svg>
+          </button>
+          <button type="button" class="window-btn close" @click="close">
+            <svg width="10" height="10" viewBox="0 0 11 11">
+              <line x1="1" y1="1" x2="10" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              <line x1="10" y1="1" x2="1" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+          </button>
+        </template>
       </div>
     </template>
   </header>
@@ -209,7 +213,7 @@ const RECENT_SEARCHES_KEY = 'fashion:recent-searches';
 const RECENT_SEARCHES_VERSION = 1;
 const MAX_RECENT_SEARCHES = 10;
 
-defineProps<{
+const props = withDefaults(defineProps<{
   activePanel: string;
   canGoBack: boolean;
   canGoForward: boolean;
@@ -217,7 +221,17 @@ defineProps<{
   windowFill?: boolean;
   lyricFullscreen?: boolean;
   hidden?: boolean;
-}>();
+  showWindowControls?: boolean;
+  allowWindowDragging?: boolean;
+  showLyricWindowToggle?: boolean;
+}>(), {
+  windowFill: false,
+  lyricFullscreen: false,
+  hidden: false,
+  showWindowControls: true,
+  allowWindowDragging: true,
+  showLyricWindowToggle: true,
+});
 
 const emit = defineEmits<{
   back: [];
@@ -313,6 +327,7 @@ function handlePointerDown(event: PointerEvent) {
 }
 
 async function minimize() {
+  if (!props.showWindowControls) return;
   try {
     await invoke('window_minimize');
   } catch (error) {
@@ -321,6 +336,7 @@ async function minimize() {
 }
 
 async function maximize() {
+  if (!props.showWindowControls) return;
   try {
     await invoke('window_maximize');
   } catch (error) {
@@ -329,6 +345,7 @@ async function maximize() {
 }
 
 async function close() {
+  if (!props.showWindowControls) return;
   try {
     await invoke('window_close');
   } catch (error) {
@@ -337,6 +354,7 @@ async function close() {
 }
 
 async function startDragging(event: MouseEvent) {
+  if (!props.allowWindowDragging) return;
   if (event.button !== 0) return;
   const target = event.target as HTMLElement | null;
   if (target?.closest('[data-no-drag]')) return;
@@ -348,6 +366,7 @@ async function startDragging(event: MouseEvent) {
 }
 
 async function handleTitlebarDoubleClick(event: MouseEvent) {
+  if (!props.allowWindowDragging || !props.showWindowControls) return;
   const target = event.target as HTMLElement | null;
   if (target?.closest('[data-no-drag]')) return;
   await maximize();

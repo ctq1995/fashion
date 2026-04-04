@@ -43,7 +43,7 @@
       </div>
     </section>
 
-    <section class="settings-card compact-card">
+    <section v-if="showDesktopLyricControls" class="settings-card compact-card">
       <div class="setting-row">
         <span>主题</span>
         <div class="chip-row">
@@ -373,6 +373,7 @@
 
       <p v-if="!storage.supported" class="storage-error">当前运行环境不支持自定义目录。</p>
       <p v-else-if="storage.errorMessage" class="storage-error">{{ storage.errorMessage }}</p>
+      <p v-else-if="!showDirectoryActions" class="section-tip">当前平台使用系统目录，不提供手动打开或切换目录。</p>
 
       <div class="storage-group">
         <div class="storage-row">
@@ -381,7 +382,7 @@
             <span class="storage-path">{{ storage.preferences.effectiveDataDirectory || 'Not available' }}</span>
             <small>{{ storage.preferences.usesDefaultDataDirectory ? '使用默认路径' : '使用自定义路径' }}</small>
           </div>
-          <div class="storage-actions">
+          <div v-if="showDirectoryActions" class="storage-actions">
             <button
               type="button"
               class="app-chip-btn"
@@ -415,7 +416,7 @@
             <span class="storage-path">{{ storage.preferences.effectiveDownloadDirectory || 'Not available' }}</span>
             <small>{{ storage.preferences.usesDefaultDownloadDirectory ? '使用系统下载目录' : '使用自定义路径' }}</small>
           </div>
-          <div class="storage-actions">
+          <div v-if="showDirectoryActions" class="storage-actions">
             <button
               type="button"
               class="app-chip-btn"
@@ -495,6 +496,7 @@ import { type Bitrate, usePlayerStore } from '@/stores/player';
 import { useStorageStore } from '@/stores/storage';
 import { useUiStore, type AppTheme } from '@/stores/ui';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '@/utils/desktopLyric';
+import { useRuntimeInfo } from '@/utils/runtime';
 
 const CREDITS_URL = 'https://music.gdstudio.xyz';
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -502,7 +504,10 @@ const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 const player = usePlayerStore();
 const ui = useUiStore();
 const storage = useStorageStore();
+const runtime = useRuntimeInfo();
 const selectableSourceCount = SOURCES.filter((source) => source.selectable).length;
+const showDesktopLyricControls = computed(() => runtime.supportsDesktopLyricWindow);
+const showDirectoryActions = computed(() => runtime.supportsDirectoryManagement);
 const cacheLocation = computed(() => {
   const base = storage.preferences.effectiveDataDirectory?.trim();
   if (!base) return 'Local cache';
