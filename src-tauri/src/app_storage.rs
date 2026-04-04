@@ -9,7 +9,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-#[cfg(not(mobile))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use rfd::FileDialog;
 
 const CONFIG_FILE_NAME: &str = "storage-preferences.json";
@@ -302,13 +302,13 @@ pub fn set_download_directory(
 
 #[tauri::command]
 pub fn pick_folder(start_directory: Option<String>) -> Result<Option<String>, String> {
-    #[cfg(mobile)]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = start_directory;
         return Ok(None);
     }
 
-    #[cfg(not(mobile))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let mut dialog = FileDialog::new();
         if let Some(start_directory) = normalize_optional_path(start_directory) {

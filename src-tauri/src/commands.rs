@@ -155,7 +155,7 @@ pub struct RuntimeInfo {
 pub fn get_runtime_info() -> RuntimeInfo {
     RuntimeInfo {
         os: std::env::consts::OS.to_string(),
-        is_mobile: cfg!(mobile),
+        is_mobile: cfg!(any(target_os = "android", target_os = "ios")),
     }
 }
 
@@ -1568,7 +1568,7 @@ pub async fn search_once(keyword: String, source: String) -> Result<Vec<SearchRe
 
 #[tauri::command]
 pub async fn window_minimize(window: Window) -> Result<(), String> {
-    #[cfg(mobile)]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = window;
         return Ok(());
@@ -1579,7 +1579,7 @@ pub async fn window_minimize(window: Window) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn window_maximize(window: Window) -> Result<(), String> {
-    #[cfg(mobile)]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = window;
         return Ok(());
@@ -1648,7 +1648,7 @@ pub async fn window_maximize(window: Window) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn window_get_state(window: Window) -> Result<WindowState, String> {
-    #[cfg(mobile)]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = window;
         return Ok(WindowState {
@@ -1665,7 +1665,7 @@ pub async fn window_toggle_lyric_fullscreen(
     window: Window,
     force: Option<bool>,
 ) -> Result<WindowState, String> {
-    #[cfg(mobile)]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = window;
         let _ = force;
@@ -1755,7 +1755,7 @@ pub async fn window_toggle_lyric_fullscreen(
 
 #[tauri::command]
 pub async fn window_close(window: Window) -> Result<(), String> {
-    #[cfg(mobile)]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = window;
         return Ok(());
@@ -1766,7 +1766,7 @@ pub async fn window_close(window: Window) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn window_start_dragging(window: Window) -> Result<(), String> {
-    #[cfg(mobile)]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = window;
         return Ok(());
