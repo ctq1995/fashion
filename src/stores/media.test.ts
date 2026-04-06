@@ -18,10 +18,13 @@ vi.mock('@/api/music', () => ({
 import { useMediaStore } from '@/stores/media';
 
 describe('media store', () => {
+  const originalImage = globalThis.Image;
+
   beforeEach(() => {
     setActivePinia(createPinia());
     apiMocks.getPicUrl.mockReset();
     apiMocks.readCachedPicUrl.mockReset();
+    globalThis.Image = originalImage;
   });
 
   it('primes covers from persisted cache before making requests', () => {
@@ -51,5 +54,28 @@ describe('media store', () => {
     expect(second).toBe('https://cdn.example/live.jpg');
     expect(apiMocks.getPicUrl).toHaveBeenCalledTimes(1);
     expect(store.getTrackCoverUrl(track)).toBe('https://cdn.example/live.jpg');
+  });
+
+  it('drops broken cover urls after image load failure', () => {
+    apiMocks.readCachedPicUrl.mockReturnValue(null);
+
+    let capturedImage: { onerror: null | (() => void); src: string } | null = null;
+    globalThis.Image = class {
+      onerror: null | (() => void) = null;
+      src = '';
+      constructor() {
+        capturedImage = this;
+      }
+    } as unknown as typeof Image;
+
+    const store = useMediaStore();
+    const track = { source: 'netease', pic_id: 'pic-3', id: '3', coverUrl: 'https://cdn.example/broken.jpg' };
+
+    expect(store.getTrackCoverUrl(track)).toBe('https://cdn.example/broken.jpg');
+
+    store.markCoverLoadFailed(track);
+    capturedImage?.onerror?.();
+
+    expect(store.getTrackCoverUrl(track)).toBe(null);
   });
 });

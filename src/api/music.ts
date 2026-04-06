@@ -226,6 +226,7 @@ export interface SearchResult {
   url_id: string | number;
   lyric_id: string | number;
   source: string;
+  durationSec?: number;
 }
 
 export interface MusicUrl {

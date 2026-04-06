@@ -78,10 +78,12 @@
               :show-window-controls="supportsWindowControls"
               :allow-window-dragging="supportsWindowControls"
               :show-lyric-window-toggle="supportsWindowControls"
+              :show-mini-player-toggle="supportsWindowControls"
               @back="goBack"
               @forward="goForward"
               @search="handleToolbarSearch"
               @open-settings="navigateTo('settings')"
+              @toggle-mini-player="toggleMiniPlayerWindow()"
               @toggle-lyric-fullscreen="toggleLyricFullscreen()"
             />
             <div class="content-area" :class="{ immersive: isImmersiveScene }">
@@ -106,18 +108,20 @@
             </div>
           </Transition>
         </div>
-        <PlayerBar
-          :scene="isImmersiveScene ? 'dark' : 'light'"
-          :lyric-active="isImmersiveScene"
-          :lyric-fullscreen="isLyricFullscreen"
-          :desktop-lyric-open="supportsDesktopLyricWindow && desktopLyricVisible"
-          :show-desktop-lyric-button="supportsDesktopLyricWindow"
-          :hidden="hideLyricChrome"
-          @open-lyric="toggleLyricPanel"
-          @toggle-desktop-lyric="toggleDesktopLyricWindow"
-          @open-playlist="playlistDrawerOpen = !playlistDrawerOpen"
-          @toggle-lyric-fullscreen="toggleLyricFullscreen()"
-        />
+        <Transition name="player-bar-fade" mode="out-in">
+          <PlayerBar
+            :scene="isImmersiveScene ? 'dark' : 'light'"
+            :lyric-active="isImmersiveScene"
+            :lyric-fullscreen="isLyricFullscreen"
+            :desktop-lyric-open="supportsDesktopLyricWindow && desktopLyricVisible"
+            :show-desktop-lyric-button="supportsDesktopLyricWindow"
+            :hidden="hideLyricChrome"
+            @open-lyric="toggleLyricPanel"
+            @toggle-desktop-lyric="toggleDesktopLyricWindow"
+            @open-playlist="playlistDrawerOpen = !playlistDrawerOpen"
+            @toggle-lyric-fullscreen="toggleLyricFullscreen()"
+          />
+        </Transition>
       </template>
     </div>
   </div>
@@ -127,9 +131,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { PhysicalPosition } from '@tauri-apps/api/dpi';
-import { availableMonitors } from '@tauri-apps/api/window';
+import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue';
+import type { MiniPlayerStateSnapshot } from '@/stores/player';
 import AppPanels from '@/components/AppPanels.vue';
 import MobileHeader from '@/components/MobileHeader.vue';
 import MobilePlayerDock from '@/components/MobilePlayerDock.vue';
@@ -158,13 +163,34 @@ import {
   type DesktopLyricWindowPosition,
 } from '@/utils/desktopLyric';
 import {
+  MINI_PLAYER_CLOSED_EVENT,
+  MINI_PLAYER_HIDE_EVENT,
+  MINI_PLAYER_PLAY_NEXT_EVENT,
+  MINI_PLAYER_PLAY_PREV_EVENT,
+  MINI_PLAYER_READY_EVENT,
+  MINI_PLAYER_SEEK_EVENT,
+  MINI_PLAYER_STATE_EVENT,
+  MINI_PLAYER_TOGGLE_DESKTOP_LYRIC_EVENT,
+  MINI_PLAYER_TOGGLE_MODE_EVENT,
+  MINI_PLAYER_TOGGLE_PLAY_EVENT,
+  MINI_PLAYER_WINDOW_LABEL,
+  MINI_PLAYER_WINDOW_QUERY,
+} from '@/utils/miniPlayer';
+import {
+  TRAY_EXIT_EVENT,
+  TRAY_PLAY_NEXT_EVENT,
+  TRAY_PLAY_PREV_EVENT,
+  TRAY_SHOW_MAIN_EVENT,
+  TRAY_TOGGLE_PLAY_EVENT,
+} from '@/utils/tray';
+import {
   findTranslatedLine,
   resolveLyricLineDuration,
   resolveLyricLineProgress,
 } from '@/utils/lyrics';
 
-type Panel = 'search' | 'favorites' | 'history' | 'lyric' | 'settings';
-type NavKey = 'recommend' | 'discover' | 'favorites' | 'history' | 'settings';
+type Panel = 'search' | 'favorites' | 'local-library' | 'history' | 'lyric' | 'settings';
+type NavKey = 'recommend' | 'discover' | 'favorites' | 'local-library' | 'history' | 'settings';
 type WindowState = {
   isFill: boolean;
   isLyricFullscreen: boolean;
@@ -185,6 +211,7 @@ const isLyricWindowFullscreen = ref(false);
 const showLyricChrome = ref(true);
 const desktopLyricVisible = ref(false);
 const desktopLyricPending = ref(false);
+const miniPlayerVisible = computed(() => player.showMiniPlayer);
 
 const isImmersiveScene = computed(() => activePanel.value === 'lyric');
 const isMobileLayout = computed(() => runtime.isMobile);
@@ -193,6 +220,7 @@ const supportsWindowControls = computed(() => runtime.supportsWindowControls);
 const supportsDesktopLyricWindow = computed(() => runtime.supportsDesktopLyricWindow);
 const isLyricFullscreen = computed(() => isImmersiveScene.value && isLyricWindowFullscreen.value);
 const hideLyricChrome = computed(() => isLyricFullscreen.value && !showLyricChrome.value);
+const miniPlayerTransitioning = ref(false);
 
 const blurStyle = computed(() => ({
   backgroundImage: player.currentTrack?.coverUrl
@@ -227,7 +255,7 @@ function navigateTo(target: string) {
 
   const panel = target as Panel;
   setPanel(panel);
-  if (panel === 'favorites' || panel === 'history' || panel === 'settings') {
+  if (panel === 'favorites' || panel === 'local-library' || panel === 'history' || panel === 'settings') {
     activeNav.value = panel;
   }
   playlistDrawerOpen.value = false;
@@ -564,9 +592,108 @@ async function toggleDesktopLyricWindow() {
   await openDesktopLyricWindow();
 }
 
+async function pushMiniPlayerState() {
+  if (!supportsWindowControls.value) return;
+  const snapshot: MiniPlayerStateSnapshot = player.getMiniPlayerStateSnapshot();
+  console.log('[mini-sync][main] push state', {
+    showMiniPlayer: player.showMiniPlayer,
+    hasTrack: !!snapshot.currentTrack,
+    trackName: snapshot.currentTrack?.name ?? null,
+    isPlaying: snapshot.isPlaying,
+    duration: snapshot.duration,
+    currentTime: snapshot.currentTime,
+    playMode: snapshot.playMode,
+  });
+  try {
+    await invoke('emit_app_event', {
+      event: MINI_PLAYER_STATE_EVENT,
+      payload: JSON.stringify(snapshot),
+    });
+  } catch (error) {
+    console.error('[mini-sync][main] emit state failed', error);
+  }
+}
+
+async function openMiniPlayerWindow() {
+  if (!supportsWindowControls.value || miniPlayerTransitioning.value || player.showMiniPlayer) return;
+  miniPlayerTransitioning.value = true;
+  try {
+    let miniWindow = await WebviewWindow.getByLabel(MINI_PLAYER_WINDOW_LABEL);
+    if (!miniWindow) {
+      const createdWindow = new WebviewWindow(MINI_PLAYER_WINDOW_LABEL, {
+        url: `index.html?${MINI_PLAYER_WINDOW_QUERY}`,
+        title: 'Fashion Mini Player',
+        width: 360,
+        height: 140,
+        minWidth: 320,
+        minHeight: 124,
+        maxWidth: 520,
+        maxHeight: 180,
+        decorations: false,
+        transparent: true,
+        shadow: false,
+        resizable: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        visible: false,
+      });
+      await new Promise<void>((resolve) => {
+        createdWindow.once('tauri://created', () => resolve());
+        createdWindow.once('tauri://error', () => resolve());
+      });
+      miniWindow = createdWindow;
+    }
+
+    player.setMiniPlayerVisible(true);
+    await miniWindow.show();
+    await pushMiniPlayerState();
+    await miniWindow.setFocus().catch(() => undefined);
+    await new Promise((resolve) => window.setTimeout(resolve, 120));
+    await getCurrentWindow().hide();
+  } catch (error) {
+    player.setMiniPlayerVisible(false);
+    console.error('open mini player window failed', error);
+  } finally {
+    miniPlayerTransitioning.value = false;
+  }
+}
+
+async function closeMiniPlayerWindow({ restoreMainWindow = true }: { restoreMainWindow?: boolean } = {}) {
+  if (!supportsWindowControls.value || miniPlayerTransitioning.value) return;
+  miniPlayerTransitioning.value = true;
+  try {
+    const miniWindow = await WebviewWindow.getByLabel(MINI_PLAYER_WINDOW_LABEL);
+    if (miniWindow) {
+      await miniWindow.hide();
+    }
+    player.setMiniPlayerVisible(false);
+    if (restoreMainWindow) {
+      const mainWindow = getCurrentWindow();
+      await mainWindow.show();
+      await new Promise((resolve) => window.setTimeout(resolve, 120));
+      await mainWindow.setFocus().catch(() => undefined);
+    }
+  } catch (error) {
+    console.error('close mini player window failed', error);
+  } finally {
+    miniPlayerTransitioning.value = false;
+  }
+}
+
+async function toggleMiniPlayerWindow() {
+  if (!supportsWindowControls.value || miniPlayerTransitioning.value) return;
+  if (player.showMiniPlayer) {
+    await closeMiniPlayerWindow();
+    return;
+  }
+  await openMiniPlayerWindow();
+}
+
 let cleanupDomResize: null | (() => void) = null;
 let lyricChromeTimer: number | null = null;
 let cleanupDesktopLyricEvents: null | (() => void) = null;
+let cleanupTrayEvents: null | (() => void) = null;
+let cleanupMiniPlayerEvents: null | (() => void) = null;
 let desktopLyricSyncFrame: number | null = null;
 let pendingDesktopLyricPayload: DesktopLyricStatePayload | null = null;
 let desktopLyricLastSyncAt = 0;
@@ -662,6 +789,10 @@ onMounted(async () => {
   await syncWindowFillState();
   await syncDesktopLyricWindowState();
 
+  if (player.showMiniPlayer) {
+    await openMiniPlayerWindow();
+  }
+
   const onResize = () => {
     if (!supportsWindowControls.value) return;
     void syncWindowFillState();
@@ -683,35 +814,107 @@ onMounted(async () => {
     window.removeEventListener('keydown', onActivity);
   };
 
+  const unlistenTrayShow = await listen(TRAY_SHOW_MAIN_EVENT, async () => {
+    await closeMiniPlayerWindow({ restoreMainWindow: true });
+    await invoke('window_show');
+  });
+  const unlistenTrayTogglePlay = await listen(TRAY_TOGGLE_PLAY_EVENT, () => {
+    void player.togglePlay();
+  });
+  const unlistenTrayPrev = await listen(TRAY_PLAY_PREV_EVENT, () => {
+    player.playPrev();
+  });
+  const unlistenTrayNext = await listen(TRAY_PLAY_NEXT_EVENT, () => {
+    player.playNext();
+  });
+  const unlistenTrayExit = await listen(TRAY_EXIT_EVENT, () => {
+    player.setMiniPlayerVisible(false);
+  });
+
+  cleanupTrayEvents = () => {
+    void unlistenTrayShow();
+    void unlistenTrayTogglePlay();
+    void unlistenTrayPrev();
+    void unlistenTrayNext();
+    void unlistenTrayExit();
+  };
+
   if (!supportsDesktopLyricWindow.value) {
     cleanupDesktopLyricEvents = null;
-    return;
+  } else {
+    const unlistenReady = await listen(DESKTOP_LYRIC_READY_EVENT, () => {
+      desktopLyricVisible.value = true;
+      desktopLyricPending.value = false;
+      scheduleDesktopLyricSync(buildDesktopLyricPayload());
+    });
+    const unlistenClosed = await listen(DESKTOP_LYRIC_CLOSED_EVENT, () => {
+      clearDesktopLyricSyncFrame();
+      pendingDesktopLyricPayload = null;
+      desktopLyricVisible.value = false;
+      desktopLyricPending.value = false;
+    });
+    const unlistenAction = await listen<DesktopLyricActionPayload>(DESKTOP_LYRIC_ACTION_EVENT, (event) => {
+      if (event.payload.type !== 'toggle-always-on-top') return;
+      ui.setLyricSettings({ alwaysOnTop: !ui.lyricSettings.alwaysOnTop });
+    });
+    const unlistenMoved = await listen<DesktopLyricWindowPosition>(DESKTOP_LYRIC_MOVED_EVENT, (event) => {
+      ui.setDesktopLyricWindowPosition(event.payload);
+    });
+
+    cleanupDesktopLyricEvents = () => {
+      void unlistenReady();
+      void unlistenClosed();
+      void unlistenAction();
+      void unlistenMoved();
+    };
   }
 
-  const unlistenReady = await listen(DESKTOP_LYRIC_READY_EVENT, () => {
-    desktopLyricVisible.value = true;
-    desktopLyricPending.value = false;
-    scheduleDesktopLyricSync(buildDesktopLyricPayload());
+  const unlistenMiniReady = await listen(MINI_PLAYER_READY_EVENT, async () => {
+    console.log('[mini-sync][main] ready event received', {
+      showMiniPlayer: player.showMiniPlayer,
+      currentTrack: player.currentTrack?.name ?? null,
+      isPlaying: player.isPlaying,
+    });
+    if (!player.showMiniPlayer) return;
+    await pushMiniPlayerState();
   });
-  const unlistenClosed = await listen(DESKTOP_LYRIC_CLOSED_EVENT, () => {
-    clearDesktopLyricSyncFrame();
-    pendingDesktopLyricPayload = null;
-    desktopLyricVisible.value = false;
-    desktopLyricPending.value = false;
+  const unlistenMiniClosed = await listen(MINI_PLAYER_CLOSED_EVENT, async () => {
+    await closeMiniPlayerWindow({ restoreMainWindow: true });
   });
-  const unlistenAction = await listen<DesktopLyricActionPayload>(DESKTOP_LYRIC_ACTION_EVENT, (event) => {
-    if (event.payload.type !== 'toggle-always-on-top') return;
-    ui.setLyricSettings({ alwaysOnTop: !ui.lyricSettings.alwaysOnTop });
+  const unlistenMiniHide = await listen(MINI_PLAYER_HIDE_EVENT, async () => {
+    await closeMiniPlayerWindow({ restoreMainWindow: false });
   });
-  const unlistenMoved = await listen<DesktopLyricWindowPosition>(DESKTOP_LYRIC_MOVED_EVENT, (event) => {
-    ui.setDesktopLyricWindowPosition(event.payload);
+  const unlistenMiniTogglePlay = await listen(MINI_PLAYER_TOGGLE_PLAY_EVENT, () => {
+    void player.togglePlay();
+  });
+  const unlistenMiniPrev = await listen(MINI_PLAYER_PLAY_PREV_EVENT, () => {
+    player.playPrev();
+  });
+  const unlistenMiniNext = await listen(MINI_PLAYER_PLAY_NEXT_EVENT, () => {
+    player.playNext();
+  });
+  const unlistenMiniToggleMode = await listen(MINI_PLAYER_TOGGLE_MODE_EVENT, () => {
+    player.togglePlayMode();
+  });
+  const unlistenMiniToggleDesktopLyric = await listen(MINI_PLAYER_TOGGLE_DESKTOP_LYRIC_EVENT, () => {
+    void toggleDesktopLyricWindow();
+  });
+  const unlistenMiniSeek = await listen<{ time?: number }>(MINI_PLAYER_SEEK_EVENT, (event) => {
+    const nextTime = event.payload?.time;
+    if (typeof nextTime !== 'number' || Number.isNaN(nextTime)) return;
+    player.seek(nextTime);
   });
 
-  cleanupDesktopLyricEvents = () => {
-    void unlistenReady();
-    void unlistenClosed();
-    void unlistenAction();
-    void unlistenMoved();
+  cleanupMiniPlayerEvents = () => {
+    void unlistenMiniReady();
+    void unlistenMiniClosed();
+    void unlistenMiniHide();
+    void unlistenMiniTogglePlay();
+    void unlistenMiniPrev();
+    void unlistenMiniNext();
+    void unlistenMiniToggleMode();
+    void unlistenMiniToggleDesktopLyric();
+    void unlistenMiniSeek();
   };
 });
 
@@ -720,6 +923,10 @@ onBeforeUnmount(() => {
   cleanupDomResize = null;
   cleanupDesktopLyricEvents?.();
   cleanupDesktopLyricEvents = null;
+  cleanupTrayEvents?.();
+  cleanupTrayEvents = null;
+  cleanupMiniPlayerEvents?.();
+  cleanupMiniPlayerEvents = null;
   clearLyricChromeTimer();
   clearDesktopLyricSyncFrame();
 });
@@ -740,6 +947,14 @@ watch(isImmersiveScene, (value) => {
     void toggleLyricFullscreen(false);
   }
 });
+
+watch(
+  () => ui.closeBehavior,
+  (value) => {
+    void invoke('emit_app_event', { event: 'app:close-behavior', payload: value });
+  },
+  { immediate: true },
+);
 
 watch(
   () => ui.lyricSettings,
@@ -764,6 +979,22 @@ watchEffect(() => {
   if (!desktopLyricVisible.value) return;
   scheduleDesktopLyricSync(buildDesktopLyricPayload());
 });
+
+watch(
+  () => [
+    player.currentTrack,
+    player.isPlaying,
+    player.duration,
+    player.currentTime,
+    player.playMode,
+  ],
+  () => {
+    if (!player.showMiniPlayer) return;
+    void pushMiniPlayerState();
+  },
+  { deep: true },
+);
+
 
 function handleLyricFullscreenKeydown(event: KeyboardEvent) {
   if (!supportsWindowControls.value) return;
@@ -949,6 +1180,32 @@ onBeforeUnmount(() => {
 
 .content-area.immersive {
   padding: 0;
+}
+@keyframes playerBarRise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.player-bar-fade-enter-active {
+  animation: playerBarRise 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.player-bar-fade-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease, filter 160ms ease;
+}
+
+.player-bar-fade-leave-to {
+  opacity: 0;
+  transform: translateY(14px) scale(0.988);
+  filter: blur(6px);
 }
 
 .mobile-layout {

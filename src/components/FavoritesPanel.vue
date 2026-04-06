@@ -7,11 +7,11 @@
           <h2>我的喜欢</h2>
           <span class="count-chip">{{ library.favorites.length }}</span>
         </div>
-        <div class="topbar-track" v-if="latestFavorite">
+        <div v-if="latestFavorite" class="topbar-track">
           <span class="track-title">{{ latestFavorite.name }}</span>
           <span class="track-meta">{{ latestFavorite.artist }} · {{ latestFavorite.album }}</span>
         </div>
-        <div class="topbar-track empty" v-else>
+        <div v-else class="topbar-track empty">
           <span class="track-title">还没有收藏歌曲</span>
           <span class="track-meta">在搜索结果或最近播放里点亮心形按钮即可收藏。</span>
         </div>
@@ -38,34 +38,32 @@
     </div>
 
     <div v-else class="favorites-list app-scroll">
-      <div
+      <SharedSongRow
         v-for="(track, idx) in library.favorites"
         :key="track.source + '-' + track.id"
-        class="favorite-row"
+        :title="track.name"
+        :subtitle="`${track.artist} · ${track.album}`"
+        :duration-text="formatDuration(track.durationSec ?? null)"
+        :playing-label="isCurrentTrack(track) ? '播放中' : undefined"
+        :active="isCurrentTrack(track)"
         @dblclick="player.addToQueue(track, true)"
       >
-        <span class="row-index">{{ idx + 1 }}</span>
+        <template #index>
+          <span class="row-index">{{ idx + 1 }}</span>
+        </template>
 
-        <div class="row-cover">
-          <img v-if="track.coverUrl" :src="track.coverUrl" />
+        <template #cover>
+          <img v-if="track.coverUrl" :src="track.coverUrl" :alt="track.name" @error="media.markCoverLoadFailed(track)" />
           <div v-else class="row-cover-ph">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <circle cx="12" cy="12" r="10" />
               <circle cx="12" cy="12" r="3" />
             </svg>
           </div>
-        </div>
+        </template>
 
-        <div class="row-meta">
-          <div class="row-head">
-            <span class="row-title">{{ track.name }}</span>
-            <span v-if="isCurrentTrack(track)" class="playing-tag">播放中</span>
-          </div>
-          <span class="row-sub">{{ track.artist }} · {{ track.album }}</span>
-        </div>
-
-        <div class="row-actions">
-          <button type="button" class="app-icon-btn row-action-btn" title="播放" @click="player.addToQueue(track, true)">
+        <template #actions>
+          <button type="button" class="app-icon-btn row-action-btn" title="播放" @click.stop="player.addToQueue(track, true)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5,3 19,12 5,21" />
             </svg>
@@ -75,15 +73,15 @@
             type="button"
             class="app-icon-btn app-icon-btn--danger row-action-btn"
             title="移除收藏"
-            @click="library.removeFavorite(track)"
+            @click.stop="library.removeFavorite(track)"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
-        </div>
-      </div>
+        </template>
+      </SharedSongRow>
     </div>
   </div>
 </template>
@@ -91,11 +89,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import DownloadButton from '@/components/DownloadButton.vue';
+import SharedSongRow from '@/components/SharedSongRow.vue';
 import { usePlayerStore, type Track } from '@/stores/player';
 import { useLibraryStore } from '@/stores/library';
+import { useMediaStore } from '@/stores/media';
+import { formatDuration } from '@/utils/formatters';
 
 const player = usePlayerStore();
 const library = useLibraryStore();
+const media = useMediaStore();
 
 const latestFavorite = computed(() => library.favorites[0] ?? null);
 
@@ -106,6 +108,7 @@ function playAll() {
 function isCurrentTrack(track: Track) {
   return player.currentTrack?.id === track.id && player.currentTrack?.source === track.source;
 }
+
 </script>
 
 <style scoped>
@@ -232,42 +235,11 @@ function isCurrentTrack(track: Track) {
   padding-right: 4px;
 }
 
-.favorite-row {
-  min-height: 58px;
-  padding: 8px 10px;
-  border-radius: 16px;
-  border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.02);
-  display: grid;
-  grid-template-columns: 24px 42px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  transition: var(--transition);
-}
-
-.favorite-row:hover {
-  background: var(--bg-hover);
-  border-color: var(--border);
-}
-
 .row-index {
+  width: 24px;
   text-align: center;
   font-size: 12px;
   color: var(--text-muted);
-}
-
-.row-cover {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--bg-active);
-}
-
-.row-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .row-cover-ph {
@@ -279,64 +251,24 @@ function isCurrentTrack(track: Track) {
   color: var(--text-muted);
 }
 
-.row-meta {
-  min-width: 0;
+.row-action-btn :deep(svg) {
+  width: 18px;
+  height: 18px;
 }
 
-.row-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+:deep(.row-cover img) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.row-title {
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.row-sub {
-  margin-top: 2px;
-  display: block;
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.playing-tag {
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--accent-dim);
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.row-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.row-actions :deep(.app-icon-btn) {
+:deep(.row-actions .app-icon-btn) {
   width: 42px;
   height: 42px;
   border-radius: 14px;
 }
 
-.row-actions :deep(svg) {
-  width: 18px;
-  height: 18px;
-}
-
-.row-actions :deep(.spinner) {
+:deep(.row-actions .spinner) {
   width: 18px;
   height: 18px;
 }
@@ -361,15 +293,6 @@ function isCurrentTrack(track: Track) {
   .favorites-topbar {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .favorite-row {
-    grid-template-columns: 24px 42px minmax(0, 1fr);
-  }
-
-  .row-actions {
-    grid-column: 2 / span 2;
-    justify-content: flex-start;
   }
 }
 </style>

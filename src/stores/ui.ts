@@ -18,12 +18,14 @@ import {
 } from '@/utils/desktopLyric';
 
 export type AppTheme = 'light' | 'dark';
+export type CloseBehavior = 'tray' | 'exit';
 
 const UI_STORAGE_VERSION = 1;
 const THEME_STORAGE_KEY = 'fashion:theme';
 const TOOLBAR_SOURCE_KEY = 'fashion:toolbar-source';
 const ENABLED_SOURCES_KEY = 'fashion:enabled-sources';
 const DESKTOP_LYRIC_SETTINGS_KEY = 'fashion:desktop-lyric-settings';
+const CLOSE_BEHAVIOR_KEY = 'fashion:close-behavior';
 const ALL_SOURCE_VALUES = SOURCES.map((item) => item.value);
 const SELECTABLE_SOURCE_VALUES = SOURCES
   .filter((item) => item.selectable)
@@ -32,6 +34,10 @@ const MIGRATED_DEFAULT_SOURCES: MusicSource[] = ['gequbao'];
 
 function isTheme(value: unknown): value is AppTheme {
   return value === 'light' || value === 'dark';
+}
+
+function isCloseBehavior(value: unknown): value is CloseBehavior {
+  return value === 'tray' || value === 'exit';
 }
 
 function isMusicSource(value: unknown): value is MusicSource {
@@ -105,6 +111,14 @@ function readDesktopLyricSettings() {
   });
 }
 
+function readCloseBehavior(): CloseBehavior {
+  return readVersionedStorage<CloseBehavior>(CLOSE_BEHAVIOR_KEY, UI_STORAGE_VERSION, {
+    fallback: 'tray',
+    validate: isCloseBehavior,
+    migrateLegacy: (raw) => (isCloseBehavior(raw) ? raw : null),
+  });
+}
+
 function resolveToolbarSource(source: MusicSource | null, enabledSources: MusicSource[]): MusicSource {
   if (source && enabledSources.includes(source)) return source;
   return enabledSources[0] ?? 'netease';
@@ -116,6 +130,7 @@ export const useUiStore = defineStore('ui', () => {
   const toolbarSearchNonce = ref(0);
   const enabledToolbarSources = ref<MusicSource[]>(readEnabledSources());
   const lyricSettings = ref<DesktopLyricSettings>(readDesktopLyricSettings());
+  const closeBehavior = ref<CloseBehavior>(readCloseBehavior());
   const toolbarSource = ref<MusicSource>(
     resolveToolbarSource(readStoredToolbarSource(), enabledToolbarSources.value),
   );
@@ -156,6 +171,14 @@ export const useUiStore = defineStore('ui', () => {
       }
 
       writeVersionedStorage(TOOLBAR_SOURCE_KEY, UI_STORAGE_VERSION, value);
+    },
+    { immediate: true },
+  );
+
+  watch(
+    closeBehavior,
+    (value) => {
+      writeVersionedStorage(CLOSE_BEHAVIOR_KEY, UI_STORAGE_VERSION, value);
     },
     { immediate: true },
   );
@@ -226,6 +249,10 @@ export const useUiStore = defineStore('ui', () => {
     });
   }
 
+  function setCloseBehavior(value: CloseBehavior) {
+    closeBehavior.value = value;
+  }
+
   function setDesktopLyricWindowPosition(position: DesktopLyricWindowPosition | null) {
     setLyricSettings({ windowPosition: position });
   }
@@ -241,6 +268,7 @@ export const useUiStore = defineStore('ui', () => {
     toolbarSource,
     enabledToolbarSources,
     lyricSettings,
+    closeBehavior,
     setTheme,
     toggleTheme,
     isSourceEnabled,
@@ -249,6 +277,7 @@ export const useUiStore = defineStore('ui', () => {
     setToolbarSource,
     submitToolbarSearch,
     setLyricSettings,
+    setCloseBehavior,
     setDesktopLyricWindowPosition,
     refreshLyricSettings,
     getSourceMeta,

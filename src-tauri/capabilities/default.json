@@ -4,7 +4,8 @@
   "description": "Enables the main window to access core window/event APIs and bundled plugins.",
   "windows": [
     "main",
-    "desktop-lyric"
+    "desktop-lyric",
+    "mini-player"
   ],
   "permissions": [
     "core:default",
@@ -15,6 +16,7 @@
     "core:window:allow-destroy",
     "core:window:allow-hide",
     "core:window:allow-set-always-on-top",
+    "core:window:allow-set-focus",
     "core:window:allow-set-focusable",
     "core:window:allow-set-ignore-cursor-events",
     "core:window:allow-set-position",

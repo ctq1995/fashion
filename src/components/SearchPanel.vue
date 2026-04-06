@@ -96,72 +96,82 @@
         </div>
 
         <div v-else class="result-list">
-          <div
+          <SharedSongRow
             v-for="(item, idx) in filteredResults"
             :key="item.source + '-' + item.id"
-            class="result-row"
-            :class="{ playing: isCurrentTrack(item) }"
+            class="result-row search-result-row"
             :data-cover-key="coverKey(item)"
+            :title="item.name"
+            :subtitle="`${getArtistNames(item.artist)} · ${getAlbumName(item.album)}`"
+            :duration-text="formatDuration(item.durationSec ?? null)"
+            :playing-label="isCurrentTrack(item) ? '播放中' : undefined"
+            :active="isCurrentTrack(item)"
             @dblclick="playNow(item)"
             @mouseenter="loadCover(item)"
           >
-            <span class="row-index">{{ idx + 1 }}</span>
+            <template #index>
+              <span class="row-index">{{ idx + 1 }}</span>
+            </template>
 
-            <div class="row-cover">
-              <img v-if="media.getTrackCoverUrl(item)" :src="media.getTrackCoverUrl(item) ?? undefined" />
+            <template #cover>
+              <img
+                v-if="media.getTrackCoverUrl(item)"
+                :src="media.getTrackCoverUrl(item) ?? undefined"
+                :alt="item.name"
+                @error="media.markCoverLoadFailed(item)"
+              />
               <div v-else class="cover-ph">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                   <circle cx="12" cy="12" r="10" />
                   <circle cx="12" cy="12" r="3" />
                 </svg>
               </div>
-            </div>
+            </template>
 
-            <div class="row-meta">
-              <span class="row-title">{{ item.name }}</span>
-              <span class="row-sub">{{ getArtistNames(item.artist) }} · {{ getAlbumName(item.album) }}</span>
-            </div>
+            <template #extra>
+              <span class="source-tag">{{ sourceLabel(item.source) }}</span>
+            </template>
 
-            <span class="source-tag">{{ sourceLabel(item.source) }}</span>
-
-            <div class="action-row">
-              <button
-                type="button"
-                class="app-icon-btn"
-                :class="{ active: isFavorite(item) }"
-                title="收藏"
-                @click.stop="toggleFavorite(item)"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path
-                    d="m12 21-1.45-1.32C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4C8.24 4 9.91 4.81 11 6.09 12.09 4.81 13.76 4 15.5 4A4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.18Z"
-                    :fill="isFavorite(item) ? 'currentColor' : 'none'"
-                  />
-                </svg>
-              </button>
-              <button type="button" class="app-icon-btn" title="加入歌单" @click.stop="openPlaylistPicker($event, item)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 7h12" />
-                  <path d="M3 12h12" />
-                  <path d="M3 17h8" />
-                  <path d="M19 8v10" />
-                  <path d="M14 13h10" />
-                </svg>
-              </button>
-              <button type="button" class="app-icon-btn" title="加入队列" @click.stop="addQueue(item)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-              <DownloadButton :track="toTrack(item)" />
-              <button type="button" class="app-icon-btn play-btn" title="播放" @click.stop="playNow(item)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5,3 19,12 5,21" />
-                </svg>
-              </button>
-            </div>
-          </div>
+            <template #actions>
+              <div class="action-row">
+                <button
+                  type="button"
+                  class="app-icon-btn"
+                  :class="{ active: isFavorite(item) }"
+                  title="收藏"
+                  @click.stop="toggleFavorite(item)"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path
+                      d="m12 21-1.45-1.32C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4C8.24 4 9.91 4.81 11 6.09 12.09 4.81 13.76 4 15.5 4A4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.18Z"
+                      :fill="isFavorite(item) ? 'currentColor' : 'none'"
+                    />
+                  </svg>
+                </button>
+                <button type="button" class="app-icon-btn" title="加入歌单" @click.stop="openPlaylistPicker($event, item)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 7h12" />
+                    <path d="M3 12h12" />
+                    <path d="M3 17h8" />
+                    <path d="M19 8v10" />
+                    <path d="M14 13h10" />
+                  </svg>
+                </button>
+                <button type="button" class="app-icon-btn" title="加入队列" @click.stop="addQueue(item)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+                <DownloadButton :track="toTrack(item)" />
+                <button type="button" class="app-icon-btn play-btn" title="播放" @click.stop="playNow(item)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5,3 19,12 5,21" />
+                  </svg>
+                </button>
+              </div>
+            </template>
+          </SharedSongRow>
         </div>
       </div>
     </template>
@@ -218,11 +228,13 @@ import {
   type MusicSource,
 } from '@/api/music';
 import DownloadButton from '@/components/DownloadButton.vue';
+import SharedSongRow from '@/components/SharedSongRow.vue';
 import { usePlayerStore, type Track } from '@/stores/player';
 import { useLibraryStore } from '@/stores/library';
 import { useMediaStore } from '@/stores/media';
 import { useUiStore } from '@/stores/ui';
 import { readVersionedStorage, writeVersionedStorage } from '@/utils/persistence';
+import { formatDuration } from '@/utils/formatters';
 
 defineProps<{ mode?: string }>();
 
@@ -682,9 +694,13 @@ onBeforeUnmount(() => {
 }
 
 .result-header {
-  padding: 16px 18px 10px;
+  margin: 10px 14px 0;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--panel-strong), rgba(255, 255, 255, 0.03));
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex-shrink: 0;
@@ -774,11 +790,17 @@ onBeforeUnmount(() => {
 
 .empty-state {
   min-height: 260px;
+  margin: 0 14px;
+  padding: 24px;
+  border-radius: 20px;
+  border: 1px dashed var(--border);
+  background: var(--bg-hover);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  text-align: center;
   color: var(--text-muted);
 }
 
@@ -791,22 +813,10 @@ onBeforeUnmount(() => {
 .result-row {
   padding: 10px 14px;
   border-radius: 18px;
-  display: grid;
-  grid-template-columns: 28px 48px minmax(0, 1fr) auto auto;
-  gap: 12px;
-  align-items: center;
-  transition: var(--transition);
-  border: 1px solid transparent;
 }
 
-.result-row:hover,
-.result-row.playing {
+.search-result-row:hover {
   background: var(--bg-hover);
-}
-
-.result-row.playing {
-  border-color: rgba(22, 214, 160, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(22, 214, 160, 0.08);
 }
 
 .row-index {
@@ -815,15 +825,14 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
 }
 
-.row-cover {
+.search-result-row :deep(.row-cover) {
   width: 48px;
   height: 48px;
   border-radius: 14px;
-  overflow: hidden;
   background: var(--bg-active);
 }
 
-.row-cover img {
+.search-result-row :deep(.row-cover img) {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -835,30 +844,6 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
-}
-
-.row-meta {
-  min-width: 0;
-}
-
-.row-title,
-.row-sub {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.row-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.row-sub {
-  margin-top: 4px;
-  font-size: 12px;
   color: var(--text-muted);
 }
 
@@ -989,24 +974,13 @@ onBeforeUnmount(() => {
   transform: translateY(-6px);
 }
 
-@media (max-width: 960px) {
-  .result-row {
-    grid-template-columns: 28px 48px minmax(0, 1fr);
-  }
-
-  .source-tag,
-  .action-row {
-    grid-column: 2 / span 2;
+@media (max-width: 760px) {
+  .history-item {
+    max-width: 100%;
   }
 
   .action-row {
     justify-content: flex-start;
-  }
-}
-
-@media (max-width: 760px) {
-  .history-item {
-    max-width: 100%;
   }
 }
 </style>

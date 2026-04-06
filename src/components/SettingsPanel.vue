@@ -95,6 +95,40 @@
 
     <section class="settings-card compact-card">
       <div class="section-head">
+        <h3>桌面与关闭</h3>
+        <span class="section-side">桌面端行为设置</span>
+      </div>
+
+      <div class="setting-row" v-if="runtime.supportsWindowControls">
+        <span>关闭按钮行为</span>
+        <div class="chip-row">
+          <button
+            type="button"
+            class="app-chip-btn"
+            :class="{ active: ui.closeBehavior === 'tray' }"
+            @click="ui.setCloseBehavior('tray')"
+          >
+            隐藏到托盘
+          </button>
+          <button
+            type="button"
+            class="app-chip-btn"
+            :class="{ active: ui.closeBehavior === 'exit' }"
+            @click="ui.setCloseBehavior('exit')"
+          >
+            直接退出
+          </button>
+        </div>
+      </div>
+
+      <div class="setting-row" v-if="runtime.supportsWindowControls">
+        <span>迷你播放器</span>
+        <span class="setting-copy-inline">可在主界面右上角直接切换，打开后会与底部主播放器栏互斥显示。</span>
+      </div>
+    </section>
+
+    <section class="settings-card compact-card">
+      <div class="section-head">
         <h3>歌词常规</h3>
         <span class="section-side">桌面歌词即时生效</span>
       </div>
@@ -734,6 +768,14 @@ function resetLyricColor(key: LyricColorKey) {
   margin-bottom: 10px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.setting-copy-inline {
+  max-width: 280px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: right;
 }
 
 .source-grid {

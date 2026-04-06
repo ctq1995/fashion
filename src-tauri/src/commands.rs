@@ -1,3 +1,10 @@
+use lofty::{
+    config::ParseOptions,
+    file::{AudioFile, TaggedFileExt},
+    picture::{MimeType, PictureType},
+    probe::Probe,
+    tag::{Accessor, ItemKey},
+};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Url};
 use scraper::{Html, Selector};
@@ -5,12 +12,24 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
+    fs,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
     time::Duration,
     time::{SystemTime, UNIX_EPOCH},
 };
+use symphonia::{
+    core::{
+        formats::FormatOptions,
+        io::MediaSourceStream,
+        meta::MetadataOptions,
+        probe::Hint,
+    },
+    default::get_probe,
+};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use tauri::Emitter;
 use tauri::{AppHandle, Window};
 use tokio::time::sleep;
 
@@ -59,6 +78,43 @@ pub struct MusicUrl {
     pub local_path: Option<String>,
     pub br: Option<Value>,
     pub size: Option<Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalTrackRecord {
+    pub id: String,
+    pub path: String,
+    pub file_name: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub duration_sec: Option<u64>,
+    pub cover_path: Option<String>,
+    pub lyric_path: Option<String>,
+    pub file_size: u64,
+    pub modified_at: u64,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalLibraryScanResult {
+    pub scanned_files: u64,
+    pub imported_files: u64,
+    pub updated_files: u64,
+    pub removed_files: u64,
+    pub skipped_files: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalLibraryScanResponse {
+    pub folders: Vec<String>,
+    pub tracks: Vec<LocalTrackRecord>,
+    pub last_scan_at: u64,
+    pub scan_result: LocalLibraryScanResult,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -483,6 +539,223 @@ fn collect_cache_file_stats(path: &Path, result: &mut CacheClearResult) -> Resul
     Ok(())
 }
 
+fn normalize_local_text(value: Option<&str>, fallback: &str) -> String {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn file_stem_or_name(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| path.file_name().and_then(|value| value.to_str()))
+        .unwrap_or("未知歌曲")
+        .to_string()
+}
+
+fn system_time_to_unix_ms(value: Option<SystemTime>) -> u64 {
+    value
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn is_local_audio_extension(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_ascii_lowercase()),
+        Some(ext) if matches!(ext.as_str(), "mp3" | "flac" | "m4a" | "wav" | "ogg")
+    )
+}
+
+fn sibling_lyric_path(path: &Path) -> Option<String> {
+    let lyric = path.with_extension("lrc");
+    lyric.exists().then(|| lyric.display().to_string())
+}
+
+fn local_cover_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app_storage::current_data_directory(app)?.join("cache").join("local-covers");
+    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    Ok(dir)
+}
+
+fn picture_extension(mime_type: Option<MimeType>) -> &'static str {
+    match mime_type {
+        Some(MimeType::Png) => "png",
+        Some(MimeType::Jpeg) => "jpg",
+        Some(MimeType::Tiff) => "tiff",
+        Some(MimeType::Bmp) => "bmp",
+        Some(MimeType::Gif) => "gif",
+        _ => "img",
+    }
+}
+
+fn extract_track_duration_sec(path: &Path) -> Option<u64> {
+    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or_default();
+    let file = fs::File::open(path).ok()?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if !extension.is_empty() {
+        hint.with_extension(extension);
+    }
+
+    let probed = get_probe()
+        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .ok()?;
+    let format = probed.format;
+    let track = format.default_track()?;
+    let params = &track.codec_params;
+    let frames = params.n_frames?;
+    let time_base = params.time_base?;
+    let duration = time_base.calc_time(frames);
+    Some(duration.seconds)
+}
+
+fn save_embedded_cover(app: &AppHandle, track_id: &str, bytes: &[u8], mime_type: Option<MimeType>) -> Option<String> {
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let extension = picture_extension(mime_type);
+    let cache_dir = local_cover_cache_dir(app).ok()?;
+    let cover_path = cache_dir.join(format!("{track_id}.{extension}"));
+
+    if fs::write(&cover_path, bytes).is_err() {
+        return None;
+    }
+
+    Some(cover_path.display().to_string())
+}
+
+fn pick_embedded_cover(tagged_file: &lofty::file::TaggedFile) -> Option<&lofty::picture::Picture> {
+    tagged_file
+        .primary_tag()
+        .and_then(|tag| {
+            tag.pictures()
+                .iter()
+                .find(|picture| picture.pic_type() == PictureType::CoverFront)
+                .or_else(|| tag.pictures().first())
+        })
+        .or_else(|| {
+            tagged_file.tags().iter().find_map(|tag| {
+                tag.pictures()
+                    .iter()
+                    .find(|picture| picture.pic_type() == PictureType::CoverFront)
+                    .or_else(|| tag.pictures().first())
+            })
+        })
+}
+
+fn parse_local_audio_metadata(app: &AppHandle, path: &Path, track_id: &str) -> (String, String, String, Option<u64>, Option<String>) {
+    let fallback_title = file_stem_or_name(path);
+    let mut title = fallback_title.clone();
+    let mut artist = "未知艺术家".to_string();
+    let mut album = "未知专辑".to_string();
+    let mut duration_sec = extract_track_duration_sec(path);
+    let mut cover_path = None;
+
+    if let Ok(tagged_file) = Probe::open(path)
+        .and_then(|probe| probe.options(ParseOptions::new()).read()) {
+        if let Some(tag) = tagged_file.primary_tag().or_else(|| tagged_file.first_tag()) {
+            let title_text = tag
+                .title()
+                .map(|value| value.to_string())
+                .or_else(|| tag.get_string(&ItemKey::TrackTitle).map(|value| value.to_string()));
+            let artist_text = tag
+                .artist()
+                .map(|value| value.to_string())
+                .or_else(|| tag.get_string(&ItemKey::TrackArtist).map(|value| value.to_string()));
+            let album_text = tag
+                .album()
+                .map(|value| value.to_string())
+                .or_else(|| tag.get_string(&ItemKey::AlbumTitle).map(|value| value.to_string()));
+
+            title = normalize_local_text(title_text.as_deref(), &fallback_title);
+            artist = normalize_local_text(artist_text.as_deref(), "未知艺术家");
+            album = normalize_local_text(album_text.as_deref(), "未知专辑");
+        }
+
+        if duration_sec.is_none() {
+            duration_sec = Some(tagged_file.properties().duration().as_secs());
+        }
+
+        if let Some(picture) = pick_embedded_cover(&tagged_file) {
+            cover_path = save_embedded_cover(app, track_id, picture.data(), picture.mime_type().cloned());
+        }
+    }
+
+    (title, artist, album, duration_sec.filter(|value| *value > 0), cover_path)
+}
+
+fn build_local_track_record(app: &AppHandle, path: &Path) -> Result<LocalTrackRecord, String> {
+    let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
+    let display_path = path.display().to_string();
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_string();
+    let track_id = signature_for_seed(&display_path);
+    let updated_at = system_time_to_unix_ms(metadata.modified().ok());
+    let (title, artist, album, duration_sec, cover_path) = parse_local_audio_metadata(app, path, &track_id);
+
+    Ok(LocalTrackRecord {
+        id: format!("local-{track_id}"),
+        path: display_path,
+        file_name,
+        title,
+        artist,
+        album,
+        duration_sec,
+        cover_path,
+        lyric_path: sibling_lyric_path(path),
+        file_size: metadata.len(),
+        modified_at: updated_at,
+        created_at: system_time_to_unix_ms(metadata.created().ok()),
+        updated_at,
+    })
+}
+
+fn collect_local_tracks(app: &AppHandle, path: &Path, tracks: &mut Vec<LocalTrackRecord>, result: &mut LocalLibraryScanResult) {
+    let entries = match std::fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(_) => {
+            result.skipped_files += 1;
+            return;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let entry_path = entry.path();
+        let metadata = match entry.metadata() {
+            Ok(metadata) => metadata,
+            Err(_) => {
+                result.skipped_files += 1;
+                continue;
+            }
+        };
+
+        if metadata.is_dir() {
+            collect_local_tracks(app, &entry_path, tracks, result);
+            continue;
+        }
+
+        if !metadata.is_file() || !is_local_audio_extension(&entry_path) {
+            continue;
+        }
+
+        result.scanned_files += 1;
+        match build_local_track_record(app, &entry_path) {
+            Ok(record) => tracks.push(record),
+            Err(_) => result.skipped_files += 1,
+        }
+    }
+}
+
 #[tauri::command]
 pub fn clear_cached_audio_files(app: AppHandle) -> Result<CacheClearResult, String> {
     let cache_dir = cache_root(&app)?;
@@ -503,6 +776,47 @@ pub fn clear_cached_audio_files(app: AppHandle) -> Result<CacheClearResult, Stri
     }
 
     Ok(result)
+}
+
+#[tauri::command]
+pub fn scan_local_library(app: AppHandle, folders: Vec<String>) -> Result<LocalLibraryScanResponse, String> {
+    let normalized_folders: Vec<String> = folders
+        .into_iter()
+        .map(|folder| folder.trim().to_string())
+        .filter(|folder| !folder.is_empty())
+        .collect();
+
+    let mut tracks = Vec::new();
+    let mut scan_result = LocalLibraryScanResult {
+        scanned_files: 0,
+        imported_files: 0,
+        updated_files: 0,
+        removed_files: 0,
+        skipped_files: 0,
+    };
+
+    for folder in &normalized_folders {
+        let path = PathBuf::from(folder);
+        if !path.exists() || !path.is_dir() {
+            scan_result.skipped_files += 1;
+            continue;
+        }
+        collect_local_tracks(&app, &path, &mut tracks, &mut scan_result);
+    }
+
+    tracks.sort_by(|left, right| {
+        left.title
+            .cmp(&right.title)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    scan_result.imported_files = tracks.len() as u64;
+
+    Ok(LocalLibraryScanResponse {
+        folders: normalized_folders,
+        tracks,
+        last_scan_at: now_unix_ms(),
+        scan_result,
+    })
 }
 
 fn build_api_url(source: &str, params: &[(&str, String)]) -> Result<Url, String> {
@@ -1770,6 +2084,71 @@ pub async fn window_close(window: Window) -> Result<(), String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         window.close().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn window_hide(window: Window) -> Result<(), String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = window;
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        window.hide().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn window_show(window: Window) -> Result<(), String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = window;
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn window_set_always_on_top(window: Window, always_on_top: bool) -> Result<(), String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = window;
+        let _ = always_on_top;
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        window
+            .set_always_on_top(always_on_top)
+            .map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn emit_app_event(app: AppHandle, event: String, payload: Option<String>) -> Result<(), String> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = app;
+        let _ = event;
+        let _ = payload;
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        match payload {
+            Some(value) => app.emit(&event, value).map_err(|e| e.to_string()),
+            None => app.emit(&event, ()).map_err(|e| e.to_string()),
+        }
     }
 }
 

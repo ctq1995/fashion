@@ -18,8 +18,13 @@ function normalizeCoverUrl(url: string | null | undefined) {
   return normalized || null;
 }
 
+function coverFailureKey(source: string, url: string) {
+  return `${source}:${url}`;
+}
+
 export const useMediaStore = defineStore('media', () => {
   const coverUrls = reactive<Record<string, string>>({});
+  const failedCoverUrls = reactive<Record<string, true>>({});
   const inFlightCovers = new Map<string, Promise<string | null>>();
 
   function coverCacheKey(source: string, picId: string) {
@@ -34,6 +39,7 @@ export const useMediaStore = defineStore('media', () => {
   function rememberCover(source: string, picId: string, url: string | null | undefined) {
     const normalized = normalizeCoverUrl(url);
     if (!picId || !normalized) return null;
+    if (failedCoverUrls[coverFailureKey(source, normalized)]) return null;
 
     const key = coverCacheKey(source, picId);
     if (coverUrls[key] !== normalized) {
@@ -55,7 +61,23 @@ export const useMediaStore = defineStore('media', () => {
   function getTrackCoverUrl(target: CoverTarget) {
     const key = coverKeyForTrack(target);
     if (key && coverUrls[key]) return coverUrls[key];
-    return normalizeCoverUrl(target.coverUrl);
+
+    const normalized = normalizeCoverUrl(target.coverUrl);
+    if (!normalized) return null;
+    if (failedCoverUrls[coverFailureKey(target.source, normalized)]) return null;
+    return normalized;
+  }
+
+  function markCoverLoadFailed(target: CoverTarget) {
+    const normalized = normalizeCoverUrl(target.coverUrl);
+    if (!normalized) return;
+
+    failedCoverUrls[coverFailureKey(target.source, normalized)] = true;
+
+    const key = coverKeyForTrack(target);
+    if (key && coverUrls[key] === normalized) {
+      delete coverUrls[key];
+    }
   }
 
   function attachTrackCover<T extends CoverTarget>(target: T): T {
@@ -96,6 +118,10 @@ export const useMediaStore = defineStore('media', () => {
     for (const key of Object.keys(coverUrls)) {
       delete coverUrls[key];
     }
+
+    for (const key of Object.keys(failedCoverUrls)) {
+      delete failedCoverUrls[key];
+    }
   }
 
   return {
@@ -107,6 +133,7 @@ export const useMediaStore = defineStore('media', () => {
     getTrackCoverUrl,
     attachTrackCover,
     ensureTrackCover,
+    markCoverLoadFailed,
     clearRuntimeCoverCache,
   };
 });

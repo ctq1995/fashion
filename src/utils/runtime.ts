@@ -15,6 +15,7 @@ interface RuntimeState {
   supportsWindowControls: boolean;
   supportsDesktopLyricWindow: boolean;
   supportsDirectoryManagement: boolean;
+  supportsSystemTray: boolean;
 }
 
 function isTauriRuntime() {
@@ -35,6 +36,7 @@ function applyRuntimeInfo(next: { isTauri: boolean; os: string; isMobile: boolea
   runtime.supportsWindowControls = next.isTauri && !next.isMobile;
   runtime.supportsDesktopLyricWindow = next.isTauri && !next.isMobile;
   runtime.supportsDirectoryManagement = next.isTauri && !next.isMobile;
+  runtime.supportsSystemTray = next.isTauri && !next.isMobile;
 }
 
 const runtime = reactive<RuntimeState>({
@@ -46,6 +48,7 @@ const runtime = reactive<RuntimeState>({
   supportsWindowControls: false,
   supportsDesktopLyricWindow: false,
   supportsDirectoryManagement: false,
+  supportsSystemTray: false,
 });
 
 applyRuntimeInfo({

@@ -132,17 +132,12 @@
 
         <button
           v-if="props.showDesktopLyricButton"
-          class="icon-btn lyric-btn"
+          class="icon-btn lyric-btn text-lyric-btn"
           :class="{ active: props.desktopLyricOpen }"
           :title="desktopLyricTitle"
           @click="emit('toggle-desktop-lyric')"
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
-            <rect x="4" y="5" width="16" height="12" rx="3" />
-            <path d="M8 10h8" />
-            <path d="M8 13h5" />
-            <path d="M9 19h6" />
-          </svg>
+          <span class="lyric-btn-text">词</span>
         </button>
         <button class="icon-btn" @click="emit('open-playlist')" title="歌单">
           <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -744,8 +739,20 @@ onBeforeUnmount(() => {
   opacity: 0.35;
 }
 
-.mini-btn.active {
-  color: #ff7ba2;
+.lyric-btn.text-lyric-btn {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.lyric-btn-text {
+  line-height: 1;
+  transform: translateY(-0.5px);
+}
+
+.icon-btn.lyric-btn.active {
+  color: #16d6a0;
+  background: rgba(22, 214, 160, 0.12);
 }
 
 .play-btn {

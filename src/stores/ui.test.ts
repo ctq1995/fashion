@@ -71,4 +71,18 @@ describe('ui store', () => {
     expect(store.enabledToolbarSources).toContain('joox');
     expect(store.enabledToolbarSources).toContain('gequbao');
   });
+
+  it('defaults close behavior to tray and persists exit mode', async () => {
+    const store = useUiStore();
+
+    expect(store.closeBehavior).toBe('tray');
+
+    store.setCloseBehavior('exit');
+    await nextTick();
+
+    setActivePinia(createPinia());
+    const restored = useUiStore();
+
+    expect(restored.closeBehavior).toBe('exit');
+  });
 });

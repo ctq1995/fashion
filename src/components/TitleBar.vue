@@ -108,6 +108,21 @@
       <div class="titlebar-drag-slot" aria-hidden="true" />
 
       <div class="toolbar-right" data-no-drag @mousedown.stop>
+        <button
+          v-if="props.showMiniPlayerToggle"
+          type="button"
+          class="nav-btn"
+          :class="{ active: player.showMiniPlayer }"
+          @click="$emit('toggle-mini-player')"
+          :title="miniPlayerToggleTitle"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="4" y="5" width="16" height="12" rx="3" />
+            <path d="M9 19h6" />
+            <path d="M10 9h4" />
+            <path d="M12 13h0.01" />
+          </svg>
+        </button>
         <button type="button" class="nav-btn" @click="$emit('open-settings')" title="设置">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3" />
@@ -206,6 +221,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { SOURCES, type MusicSource } from '@/api/music';
+import { usePlayerStore } from '@/stores/player';
 import { useUiStore } from '@/stores/ui';
 import { readVersionedStorage, writeVersionedStorage } from '@/utils/persistence';
 
@@ -224,6 +240,7 @@ const props = withDefaults(defineProps<{
   showWindowControls?: boolean;
   allowWindowDragging?: boolean;
   showLyricWindowToggle?: boolean;
+  showMiniPlayerToggle?: boolean;
 }>(), {
   windowFill: false,
   lyricFullscreen: false,
@@ -231,6 +248,7 @@ const props = withDefaults(defineProps<{
   showWindowControls: true,
   allowWindowDragging: true,
   showLyricWindowToggle: true,
+  showMiniPlayerToggle: true,
 });
 
 const emit = defineEmits<{
@@ -239,8 +257,10 @@ const emit = defineEmits<{
   search: [value: string];
   'open-settings': [];
   'toggle-lyric-fullscreen': [];
+  'toggle-mini-player': [];
 }>();
 
+const player = usePlayerStore();
 const ui = useUiStore();
 const rootEl = ref<HTMLElement | null>(null);
 const searchText = ref(ui.toolbarSearch);
@@ -256,6 +276,7 @@ const enabledSources = computed(() =>
 const selectedSourceLabel = computed(() =>
   SOURCES.find((item) => item.value === selectedSource.value)?.label ?? selectedSource.value,
 );
+const miniPlayerToggleTitle = computed(() => player.showMiniPlayer ? '关闭迷你播放器' : '打开迷你播放器');
 
 function loadRecentSearches() {
   return readVersionedStorage<string[]>(RECENT_SEARCHES_KEY, RECENT_SEARCHES_VERSION, {
@@ -483,6 +504,7 @@ onBeforeUnmount(() => {
 }
 
 .nav-btn:hover:not(:disabled),
+.nav-btn.active,
 .window-btn:hover,
 .search-submit:hover {
   background: var(--bg-hover);

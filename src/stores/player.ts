@@ -21,10 +21,12 @@ const BITRATE_STORAGE_KEY = 'fashion:bitrate';
 const HISTORY_STORAGE_KEY = 'fashion:history';
 const SESSION_STORAGE_KEY = 'fashion:session';
 const PLAYBACK_RATE_STORAGE_KEY = 'fashion:playbackRate';
+const MINI_PLAYER_STORAGE_KEY = 'fashion:mini-player';
 const PLAYER_STORAGE_VERSION = 1;
 const HISTORY_STORAGE_VERSION = 2;
 const SESSION_STORAGE_VERSION = 1;
 const PLAYBACK_RATE_STORAGE_VERSION = 1;
+const MINI_PLAYER_STORAGE_VERSION = 1;
 const MAX_HISTORY_ITEMS = 100;
 
 export type PlaybackRate = (typeof PLAYBACK_RATES)[number];
@@ -41,6 +43,7 @@ export interface Track {
   source: string;
   url?: string;
   coverUrl?: string;
+  durationSec?: number;
 }
 
 export interface HistoryItem extends Track {
@@ -52,6 +55,14 @@ export interface HistoryItem extends Track {
   completed: boolean;
 }
 
+export interface MiniPlayerStateSnapshot {
+  currentTrack: Track | null;
+  isPlaying: boolean;
+  duration: number;
+  currentTime: number;
+  playMode: PlayMode;
+}
+
 interface PlayerSession {
   queue: Track[];
   currentIndex: number;
@@ -60,6 +71,10 @@ interface PlayerSession {
   volume: number;
   playMode: PlayMode;
   preferredBitrate: Bitrate;
+}
+
+interface MiniPlayerSession {
+  visible: boolean;
 }
 
 function shouldUseAnonymousCors(source: string, localPath?: string) {
@@ -254,6 +269,17 @@ function readInitialPlaybackRate(): PlaybackRate {
   });
 }
 
+function readMiniPlayerSession(): MiniPlayerSession {
+  return readVersionedStorage<MiniPlayerSession>(MINI_PLAYER_STORAGE_KEY, MINI_PLAYER_STORAGE_VERSION, {
+    fallback: { visible: false },
+    validate: (value): value is MiniPlayerSession => (
+      !!value
+      && typeof value === 'object'
+      && typeof (value as MiniPlayerSession).visible === 'boolean'
+    ),
+  });
+}
+
 export const usePlayerStore = defineStore('player', () => {
   const media = useMediaStore();
   const library = useLibraryStore();
@@ -284,6 +310,7 @@ export const usePlayerStore = defineStore('player', () => {
   const history = ref<HistoryItem[]>(readInitialHistory().map((item) => media.attachTrackCover(item)));
 
   const playbackRate = ref<PlaybackRate>(readInitialPlaybackRate());
+  const showMiniPlayer = ref(readMiniPlayerSession().visible);
   const sleepTimerEndTime = ref<number | null>(null);
   const sleepTimerRemaining = ref<number | null>(null);
 
@@ -340,6 +367,9 @@ export const usePlayerStore = defineStore('player', () => {
 
   watch(preferredBitrate, persistBitrate, { immediate: true });
   watch(history, persistHistory, { deep: true, immediate: true });
+  watch(showMiniPlayer, (visible) => {
+    writeVersionedStorage(MINI_PLAYER_STORAGE_KEY, MINI_PLAYER_STORAGE_VERSION, { visible });
+  }, { immediate: true });
   watch([queue, currentIndex, currentTrack, volume, playMode], () => persistSession(true), { deep: true });
 
   function syncCurrentHistory(completed = false) {
@@ -749,23 +779,32 @@ export const usePlayerStore = defineStore('player', () => {
         } catch {}
       }
 
-      const res = await musicApi.getMusicUrl(track.source, track.id, preferredBitrate.value);
-      if (token !== loadToken) return;
-      const playbackUrl = resolvePlayableAudioUrl(res.url, res.localPath);
-      res.url = playbackUrl;
-      if (!res.url) throw new Error('无法获取播放链接');
+      let playbackUrl = '';
+      let localPath: string | undefined;
 
-      audio.crossOrigin = shouldUseAnonymousCors(track.source, res.localPath) ? 'anonymous' : null;
+      if (track.source === 'local') {
+        localPath = track.url;
+        playbackUrl = resolvePlayableAudioUrl(undefined, localPath);
+        if (!playbackUrl) throw new Error('无法获取本地文件播放路径');
+      } else {
+        const res = await musicApi.getMusicUrl(track.source, track.id, preferredBitrate.value);
+        if (token !== loadToken) return;
+        playbackUrl = resolvePlayableAudioUrl(res.url, res.localPath);
+        localPath = res.localPath;
+        if (!playbackUrl) throw new Error('无法获取播放链接');
+      }
+
+      audio.crossOrigin = shouldUseAnonymousCors(track.source, localPath) ? 'anonymous' : null;
       if (shouldDebugPlayback(track)) {
         logPlaybackDebug('load-track-resolved', {
           track,
-          apiUrl: res.url,
-          localPath: res.localPath ?? null,
+          apiUrl: playbackUrl,
+          localPath: localPath ?? null,
           playbackUrl,
           crossOrigin: audio.crossOrigin,
         });
       }
-      audio.src = res.url;
+      audio.src = playbackUrl;
       audio.load();
 
       if (autoplay) {
@@ -953,6 +992,28 @@ export const usePlayerStore = defineStore('player', () => {
     persistSession(true);
   }
 
+  function setMiniPlayerVisible(visible: boolean) {
+    showMiniPlayer.value = visible;
+  }
+
+  function applyMiniPlayerStateSnapshot(snapshot: MiniPlayerStateSnapshot) {
+    currentTrack.value = snapshot.currentTrack ? media.attachTrackCover(snapshot.currentTrack) : null;
+    isPlaying.value = snapshot.isPlaying;
+    duration.value = snapshot.duration;
+    currentTime.value = snapshot.currentTime;
+    playMode.value = snapshot.playMode;
+  }
+
+  function getMiniPlayerStateSnapshot(): MiniPlayerStateSnapshot {
+    return {
+      currentTrack: currentTrack.value,
+      isPlaying: isPlaying.value,
+      duration: duration.value,
+      currentTime: currentTime.value,
+      playMode: playMode.value,
+    };
+  }
+
   function hydrateSession() {
     if (!initialSession.currentTrack || initialSession.currentIndex < 0 || !initialSession.queue.length) {
       registerMediaSessionHandlers();
@@ -989,6 +1050,7 @@ export const usePlayerStore = defineStore('player', () => {
     playMode,
     preferredBitrate,
     playbackRate,
+    showMiniPlayer,
     sleepTimerEndTime,
     sleepTimerRemaining,
     history,
@@ -1015,6 +1077,9 @@ export const usePlayerStore = defineStore('player', () => {
     playHistory,
     removeHistory,
     clearHistory,
+    setMiniPlayerVisible,
+    applyMiniPlayerStateSnapshot,
+    getMiniPlayerStateSnapshot,
     removeFromQueue,
     clearQueue,
     PLAYBACK_RATES,
