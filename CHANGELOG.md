@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.5.0 - 2026-04-09
+
+- Hardened the desktop app security baseline by replacing the permissive Tauri CSP with a minimal policy and restricting remote media URLs to supported schemes only.
+- Reduced production playback log exposure and improved download feedback with clearer saved-file results in the search list.
+- Improved search recovery UX with limited-source hints, retry actions, and quicker source switching from empty/error states.
+- Reduced search row action density by moving lower-frequency actions into a more menu.
+- Added grouped settings section navigation to improve reachability of audio source, playback, window, and lyric options.
+
 ## v1.4.0 - 2026-04-05
 
 - Fixed desktop app shutdown so the desktop lyric child window is destroyed instead of only being hidden, reducing lingering background processes after closing the app.
