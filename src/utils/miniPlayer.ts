@@ -10,6 +10,7 @@ export const MINI_PLAYER_TOGGLE_MODE_EVENT = 'mini-player:toggle-mode';
 export const MINI_PLAYER_TOGGLE_DESKTOP_LYRIC_EVENT = 'mini-player:toggle-desktop-lyric';
 export const MINI_PLAYER_SEEK_EVENT = 'mini-player:seek';
 export const MINI_PLAYER_STATE_EVENT = 'mini-player:state';
+export const MINI_PLAYER_DOCK_STATE_EVENT = 'mini-player:dock-state';
 
 export function isMiniPlayerWindowMode(search: string) {
   return new URLSearchParams(search).get('mini-player') === '1';

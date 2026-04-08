@@ -12,6 +12,7 @@ import {
 import { useLibraryStore } from '@/stores/library';
 import { useMediaStore } from '@/stores/media';
 import { readVersionedStorage, writeVersionedStorage } from '@/utils/persistence';
+import { isProductionLoggingEnabled, sanitizeRemoteMediaUrl } from '@/utils/security';
 
 export type PlayMode = 'sequence' | 'random' | 'single';
 
@@ -85,7 +86,7 @@ function resolvePlayableAudioUrl(url?: string, localPath?: string) {
   if (localPath) {
     return convertFileSrc(localPath);
   }
-  return url ?? '';
+  return sanitizeRemoteMediaUrl(url);
 }
 
 function shouldDebugPlayback(track: Pick<Track, 'source'> | null | undefined) {
@@ -93,6 +94,7 @@ function shouldDebugPlayback(track: Pick<Track, 'source'> | null | undefined) {
 }
 
 function logPlaybackDebug(stage: string, payload?: unknown) {
+  if (!isProductionLoggingEnabled()) return;
   if (payload === undefined) {
     console.log('[gequbao-debug]', stage);
     return;
@@ -101,6 +103,7 @@ function logPlaybackDebug(stage: string, payload?: unknown) {
 }
 
 function logPlaybackError(stage: string, payload?: unknown) {
+  if (!isProductionLoggingEnabled()) return;
   if (payload === undefined) {
     console.error('[gequbao-debug]', stage);
     return;

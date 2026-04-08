@@ -42,6 +42,10 @@
       </Transition>
     </Teleport>
   </div>
+
+  <span v-if="status !== 'idle'" class="download-feedback">
+    {{ feedbackText || buttonTitle }}
+  </span>
 </template>
 
 <script setup lang="ts">
@@ -67,18 +71,24 @@ const bitrateOptions: Array<{ value: Bitrate; label: string; description: string
   { value: 999, label: '无损', description: 'VIP/资源允许时' },
 ];
 
+interface DownloadResult {
+  path: string;
+  fileName: string;
+}
+
 const triggerRef = ref<HTMLElement | null>(null);
 const menuRef = ref<HTMLElement | null>(null);
 const menuOpen = ref(false);
 const downloading = ref(false);
 const status = ref<'idle' | 'done' | 'error'>('idle');
 const menuStyle = ref<Record<string, string>>({});
+const feedbackText = ref('');
 let resetTimer: number | null = null;
 
 const buttonTitle = computed(() => {
   if (downloading.value) return '下载中';
-  if (status.value === 'done') return '已保存到下载目录';
-  if (status.value === 'error') return '下载失败，请重试';
+  if (status.value === 'done') return feedbackText.value || '已保存到下载目录';
+  if (status.value === 'error') return feedbackText.value || '下载失败，请重试';
   return '下载';
 });
 
@@ -121,6 +131,8 @@ function updateMenuPosition() {
 async function toggleMenu() {
   if (downloading.value) return;
   status.value = 'idle';
+  status.value = 'idle';
+  feedbackText.value = '';
   menuOpen.value = !menuOpen.value;
   if (!menuOpen.value) return;
   await nextTick();
@@ -137,16 +149,18 @@ async function startDownload(bitrate: Bitrate) {
   clearResetTimer();
 
   try {
-    await invoke<string>('download_music', {
+    const result = await invoke<DownloadResult>('download_music', {
       source: props.track.source,
       id: props.track.id,
       bitrate,
       title: props.track.name,
       artist: props.track.artist,
     });
+    feedbackText.value = `已保存：${result.fileName}`;
     status.value = 'done';
   } catch (error) {
     console.error('download_music failed', error);
+    feedbackText.value = error instanceof Error ? error.message : '下载失败，请重试';
     status.value = 'error';
   } finally {
     downloading.value = false;
@@ -195,6 +209,17 @@ watch(
 <style scoped>
 .download-control {
   display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.download-feedback {
+  max-width: 220px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .download-btn.success {

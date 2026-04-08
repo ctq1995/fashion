@@ -1,6 +1,8 @@
 ﻿<template>
   <div class="settings-panel app-scroll">
-    <section class="settings-card">
+    <SettingsSectionNav :items="sectionItems" :active-id="activeSectionId" @jump="jumpToSection" />
+
+    <section id="sources" class="settings-card">
       <div class="section-head">
         <h3>搜索音源</h3>
         <span class="section-side">{{ ui.enabledToolbarSources.length }} / {{ selectableSourceCount }}</span>
@@ -43,7 +45,7 @@
       </div>
     </section>
 
-    <section v-if="showDesktopLyricControls" class="settings-card compact-card">
+    <section id="playback" v-if="showDesktopLyricControls" class="settings-card compact-card">
       <div class="setting-row">
         <span>主题</span>
         <div class="chip-row">
@@ -93,7 +95,7 @@
       </div>
     </section>
 
-    <section class="settings-card compact-card">
+    <section id="window" class="settings-card compact-card">
       <div class="section-head">
         <h3>桌面与关闭</h3>
         <span class="section-side">桌面端行为设置</span>
@@ -127,7 +129,7 @@
       </div>
     </section>
 
-    <section class="settings-card compact-card">
+    <section id="lyrics" class="settings-card compact-card">
       <div class="section-head">
         <h3>歌词常规</h3>
         <span class="section-side">桌面歌词即时生效</span>
@@ -524,7 +526,8 @@
 
 <script setup lang="ts">
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
+import SettingsSectionNav from '@/components/SettingsSectionNav.vue';
 import { SOURCES } from '@/api/music';
 import { type Bitrate, usePlayerStore } from '@/stores/player';
 import { useStorageStore } from '@/stores/storage';
@@ -601,6 +604,20 @@ const lyricColorDrafts = reactive<Record<LyricColorKey, string>>({
   baseColor: ui.lyricSettings.baseColor,
   highlightColor: ui.lyricSettings.highlightColor,
 });
+
+const sectionItems = [
+  { id: 'sources', label: '音源' },
+  { id: 'playback', label: '播放' },
+  { id: 'window', label: '桌面与关闭' },
+  { id: 'lyrics', label: '歌词' },
+] as const;
+
+const activeSectionId = ref('sources');
+
+function jumpToSection(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  activeSectionId.value = id;
+}
 
 function sourceStatusLabel(state: 'available' | 'limited' | 'disabled') {
   if (state === 'available') return '可用';
@@ -731,6 +748,7 @@ function resetLyricColor(key: LyricColorKey) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  scroll-behavior: smooth;
 }
 
 .settings-card {

@@ -188,9 +188,8 @@ import {
   resolveLyricLineDuration,
   resolveLyricLineProgress,
 } from '@/utils/lyrics';
+import { useAppNavigation } from '@/composables/useAppNavigation';
 
-type Panel = 'search' | 'favorites' | 'local-library' | 'history' | 'lyric' | 'settings';
-type NavKey = 'recommend' | 'discover' | 'favorites' | 'local-library' | 'history' | 'settings';
 type WindowState = {
   isFill: boolean;
   isLyricFullscreen: boolean;
@@ -200,12 +199,23 @@ const player = usePlayerStore();
 const ui = useUiStore();
 const runtime = useRuntimeInfo();
 
-const activePanel = ref<Panel>('search');
-const activeNav = ref<NavKey>('recommend');
-const searchMode = ref<'recommend' | 'discover'>('recommend');
-const panelHistory = ref<Panel[]>(['search']);
-const historyIndex = ref(0);
 const playlistDrawerOpen = ref(false);
+const {
+  activePanel,
+  activeNav,
+  searchMode,
+  canGoBack,
+  canGoForward,
+  navigateTo,
+  goBack,
+  goForward,
+  handleToolbarSearch,
+  handleMobileSearch,
+  toggleLyricPanel,
+} = useAppNavigation({
+  playlistDrawerOpen,
+  submitToolbarSearch: ui.submitToolbarSearch,
+});
 const isWindowFill = ref(false);
 const isLyricWindowFullscreen = ref(false);
 const showLyricChrome = ref(true);
@@ -228,74 +238,6 @@ const blurStyle = computed(() => ({
     : 'none',
   opacity: player.currentTrack?.coverUrl ? '1' : '0',
 }));
-
-const canGoBack = computed(() => historyIndex.value > 0);
-const canGoForward = computed(() => historyIndex.value < panelHistory.value.length - 1);
-
-function setPanel(panel: Panel, recordHistory = true) {
-  if (activePanel.value === panel && recordHistory) return;
-
-  activePanel.value = panel;
-
-  if (!recordHistory) return;
-
-  panelHistory.value = panelHistory.value.slice(0, historyIndex.value + 1);
-  panelHistory.value.push(panel);
-  historyIndex.value = panelHistory.value.length - 1;
-}
-
-function navigateTo(target: string) {
-  if (target === 'recommend' || target === 'discover') {
-    activeNav.value = target;
-    searchMode.value = target;
-    setPanel('search');
-    playlistDrawerOpen.value = false;
-    return;
-  }
-
-  const panel = target as Panel;
-  setPanel(panel);
-  if (panel === 'favorites' || panel === 'local-library' || panel === 'history' || panel === 'settings') {
-    activeNav.value = panel;
-  }
-  playlistDrawerOpen.value = false;
-}
-
-function goBack() {
-  if (!canGoBack.value) return;
-  historyIndex.value -= 1;
-  setPanel(panelHistory.value[historyIndex.value], false);
-}
-
-function goForward() {
-  if (!canGoForward.value) return;
-  historyIndex.value += 1;
-  setPanel(panelHistory.value[historyIndex.value], false);
-}
-
-function handleToolbarSearch(value: string) {
-  ui.submitToolbarSearch(value);
-  setPanel('search');
-}
-
-function handleMobileSearch() {
-  activeNav.value = 'recommend';
-  searchMode.value = 'recommend';
-  setPanel('search');
-  playlistDrawerOpen.value = false;
-}
-
-function toggleLyricPanel() {
-  if (activePanel.value === 'lyric') {
-    if (canGoBack.value) {
-      goBack();
-      return;
-    }
-    navigateTo('recommend');
-    return;
-  }
-  navigateTo('lyric');
-}
 
 function buildDesktopLyricPayload(): DesktopLyricStatePayload {
   const currentIndex = player.currentLyricIndex;
@@ -623,16 +565,16 @@ async function openMiniPlayerWindow() {
       const createdWindow = new WebviewWindow(MINI_PLAYER_WINDOW_LABEL, {
         url: `index.html?${MINI_PLAYER_WINDOW_QUERY}`,
         title: 'Fashion Mini Player',
-        width: 360,
-        height: 140,
-        minWidth: 320,
-        minHeight: 124,
-        maxWidth: 520,
-        maxHeight: 180,
+        width: 420,
+        height: 164,
+        minWidth: 420,
+        minHeight: 164,
+        maxWidth: 420,
+        maxHeight: 164,
         decorations: false,
         transparent: true,
         shadow: false,
-        resizable: true,
+        resizable: false,
         alwaysOnTop: true,
         skipTaskbar: true,
         visible: false,
@@ -789,6 +731,11 @@ onMounted(async () => {
   await syncWindowFillState();
   await syncDesktopLyricWindowState();
 
+  const existingMiniWindow = await WebviewWindow.getByLabel(MINI_PLAYER_WINDOW_LABEL);
+  const miniWindowVisible = existingMiniWindow ? await existingMiniWindow.isVisible().catch(() => false) : false;
+  if (player.showMiniPlayer !== miniWindowVisible) {
+    player.setMiniPlayerVisible(miniWindowVisible);
+  }
   if (player.showMiniPlayer) {
     await openMiniPlayerWindow();
   }
@@ -882,7 +829,7 @@ onMounted(async () => {
     await closeMiniPlayerWindow({ restoreMainWindow: true });
   });
   const unlistenMiniHide = await listen(MINI_PLAYER_HIDE_EVENT, async () => {
-    await closeMiniPlayerWindow({ restoreMainWindow: false });
+    await closeMiniPlayerWindow({ restoreMainWindow: true });
   });
   const unlistenMiniTogglePlay = await listen(MINI_PLAYER_TOGGLE_PLAY_EVENT, () => {
     void player.togglePlay();

@@ -59,7 +59,7 @@ describe('media store', () => {
   it('drops broken cover urls after image load failure', () => {
     apiMocks.readCachedPicUrl.mockReturnValue(null);
 
-    let capturedImage: { onerror: null | (() => void); src: string } | null = null;
+    let capturedImage: InstanceType<typeof Image> | { onerror: null | (() => void); src: string } | null = null;
     globalThis.Image = class {
       onerror: null | (() => void) = null;
       src = '';
@@ -74,7 +74,7 @@ describe('media store', () => {
     expect(store.getTrackCoverUrl(track)).toBe('https://cdn.example/broken.jpg');
 
     store.markCoverLoadFailed(track);
-    capturedImage?.onerror?.();
+    (capturedImage as { onerror?: (() => void) | null } | null)?.onerror?.();
 
     expect(store.getTrackCoverUrl(track)).toBe(null);
   });

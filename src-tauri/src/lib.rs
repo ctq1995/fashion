@@ -20,6 +20,8 @@ fn destroy_child_windows<R: tauri::Runtime>(main_window: &WebviewWindow<R>) {
     let app = main_window.app_handle();
     for (label, window) in app.webview_windows() {
         if label != main_window.label() {
+            #[cfg(windows)]
+            commands::reset_mini_player_dock_state_for_label(window.label());
             let _ = window.destroy();
         }
     }
@@ -37,10 +39,10 @@ fn ensure_mini_player_window(app: &tauri::AppHandle) -> Result<WebviewWindow, St
         WebviewUrl::App("index.html?mini-player=1".into()),
     )
     .title("Fashion Mini Player")
-    .inner_size(420.0, 164.0)
-    .min_inner_size(380.0, 156.0)
-    .max_inner_size(560.0, 220.0)
-    .resizable(true)
+      .inner_size(420.0, 164.0)
+        .min_inner_size(420.0, 164.0)
+        .max_inner_size(420.0, 164.0)
+    .resizable(false)
     .decorations(false)
     .transparent(true)
     .shadow(false)
@@ -154,6 +156,8 @@ pub fn run() {
             commands::clear_cached_audio_files,
             commands::scan_local_library,
             commands::window_start_dragging,
+            commands::mini_player_start_dragging,
+            commands::mini_player_check_dock_after_drag,
             commands::window_minimize,
             commands::window_maximize,
             commands::window_close,
@@ -175,7 +179,9 @@ pub fn run() {
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 {
                     build_system_tray(app.handle())?;
-                    let _ = ensure_mini_player_window(app.handle())?;
+                    let mini_player_window = ensure_mini_player_window(app.handle())?;
+                    #[cfg(windows)]
+                    commands::install_mini_player_dock_tracking(&mini_player_window);
                 }
 
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]

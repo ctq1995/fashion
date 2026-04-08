@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self' asset: http://asset.localhost; img-src 'self' asset: http://asset.localhost data: https:; media-src 'self' asset: http://asset.localhost https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: http://localhost:5173 ws://localhost:5173; font-src 'self' data:",
       "assetProtocol": {
         "enable": true,
         "scope": [

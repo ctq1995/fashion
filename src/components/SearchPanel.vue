@@ -55,6 +55,7 @@
           <span class="section-kicker">Search</span>
           <h2>{{ keyword }}</h2>
           <span class="result-sub">{{ currentSourceLabel }} · {{ searching ? '搜索中' : `${filteredResults.length} 首结果` }}</span>
+          <span v-if="isLimitedSource" class="source-hint">当前音源可用性有限，失败时建议切换其他音源。</span>
         </div>
 
         <div class="filter-row">
@@ -75,7 +76,13 @@
         </div>
       </div>
 
-      <div v-if="errMsg" class="err-bar">{{ errMsg }}</div>
+      <div v-if="errMsg" class="err-bar err-bar--actionable">
+        <span>{{ errMsg }}</span>
+        <div class="err-actions">
+          <button type="button" class="app-btn app-btn--ghost compact-btn" @click="retrySearch">重试</button>
+          <button type="button" class="app-btn app-btn--ghost compact-btn" @click="switchSourceAndRetry">切换音源重试</button>
+        </div>
+      </div>
 
       <div ref="panelBody" class="panel-body app-scroll">
         <div v-if="searching" class="loading-list">
@@ -93,6 +100,10 @@
         <div v-else-if="!filteredResults.length" class="empty-state">
           <p>没有找到相关结果</p>
           <span>换个关键词，或者切换音源再试一次。</span>
+          <div class="empty-actions inline-actions">
+            <button type="button" class="app-btn app-btn--ghost compact-btn" @click="switchSourceAndRetry">切换音源</button>
+            <button type="button" class="app-btn app-btn--ghost compact-btn" @click="favoriteOnly = false">清除筛选</button>
+          </div>
         </div>
 
         <div v-else class="result-list">
@@ -128,9 +139,6 @@
               </div>
             </template>
 
-            <template #extra>
-              <span class="source-tag">{{ sourceLabel(item.source) }}</span>
-            </template>
 
             <template #actions>
               <div class="action-row">
@@ -148,21 +156,7 @@
                     />
                   </svg>
                 </button>
-                <button type="button" class="app-icon-btn" title="加入歌单" @click.stop="openPlaylistPicker($event, item)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 7h12" />
-                    <path d="M3 12h12" />
-                    <path d="M3 17h8" />
-                    <path d="M19 8v10" />
-                    <path d="M14 13h10" />
-                  </svg>
-                </button>
-                <button type="button" class="app-icon-btn" title="加入队列" @click.stop="addQueue(item)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                </button>
+                <SearchRowMoreMenu @queue="addQueue(item)" @playlist="openPlaylistPickerForTarget($event, item)" />
                 <DownloadButton :track="toTrack(item)" />
                 <button type="button" class="app-icon-btn play-btn" title="播放" @click.stop="playNow(item)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -222,12 +216,14 @@ import {
   musicApi,
   getArtistNames,
   getAlbumName,
+  getSourceMeta,
   toStr,
   SOURCES,
   type SearchResult,
   type MusicSource,
 } from '@/api/music';
 import DownloadButton from '@/components/DownloadButton.vue';
+import SearchRowMoreMenu from '@/components/SearchRowMoreMenu.vue';
 import SharedSongRow from '@/components/SharedSongRow.vue';
 import { usePlayerStore, type Track } from '@/stores/player';
 import { useLibraryStore } from '@/stores/library';
@@ -274,6 +270,8 @@ const newPlaylistName = ref('');
 
 const hasQuery = computed(() => keyword.value.trim().length > 0);
 const currentSourceLabel = computed(() => sourceLabel(source.value));
+const currentSourceMeta = computed(() => getSourceMeta(source.value));
+const isLimitedSource = computed(() => currentSourceMeta.value?.state === 'limited');
 const resultLookup = computed(() => new Map(results.value.map((item) => [coverKey(item), item] as const)));
 
 const filteredResults = computed(() => {
@@ -392,6 +390,20 @@ function bindCoverObserver() {
     .forEach((row) => coverObserver?.observe(row));
 }
 
+function retrySearch() {
+  if (!keyword.value.trim()) return;
+  void doSearch();
+}
+
+function switchSourceAndRetry() {
+  const enabled = ui.enabledToolbarSources.filter((item) => item !== source.value);
+  const next = enabled[0];
+  if (!next || !keyword.value.trim()) return;
+  source.value = next;
+  ui.setToolbarSource(next);
+  void doSearch();
+}
+
 async function doSearch() {
   const normalized = keyword.value.trim();
   if (!normalized) {
@@ -461,12 +473,16 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-async function openPlaylistPicker(event: MouseEvent, item: SearchResult) {
+async function openPlaylistPickerForTarget(target: HTMLElement | null, item: SearchResult) {
   pickerTrack.value = toTrack(item);
-  pickerAnchor = event.currentTarget as HTMLElement;
+  pickerAnchor = target;
   pickerOpen.value = true;
   await nextTick();
   updatePickerPosition();
+}
+
+async function openPlaylistPicker(event: MouseEvent, item: SearchResult) {
+  await openPlaylistPickerForTarget(event.currentTarget as HTMLElement | null, item);
 }
 
 function updatePickerPosition() {
@@ -810,6 +826,27 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
 }
 
+.source-hint {
+  display: inline-flex;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-warning);
+}
+
+.err-bar--actionable {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.err-actions,
+.inline-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .result-row {
   padding: 10px 14px;
   border-radius: 18px;
@@ -847,15 +884,6 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
 }
 
-.source-tag {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
 
 .action-row {
   display: flex;

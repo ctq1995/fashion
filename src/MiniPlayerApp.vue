@@ -2,6 +2,9 @@
   <main
     class="mini-player-shell"
     :data-theme="ui.theme"
+    :data-docked-edge="dockedEdge ?? ''"
+    :data-collapsed="collapsed ? 'true' : 'false'"
+    @mousedown="startDragging"
   >
     <div class="mini-player-card" data-tauri-drag-region>
       <div class="mini-grid">
@@ -102,6 +105,7 @@ import type { MiniPlayerStateSnapshot, Track, PlayMode } from '@/stores/player';
 import { useUiStore } from '@/stores/ui';
 import {
   MINI_PLAYER_CLOSED_EVENT,
+  MINI_PLAYER_DOCK_STATE_EVENT,
   MINI_PLAYER_HIDE_EVENT,
   MINI_PLAYER_PLAY_NEXT_EVENT,
   MINI_PLAYER_PLAY_PREV_EVENT,
@@ -113,6 +117,11 @@ import {
   MINI_PLAYER_TOGGLE_PLAY_EVENT,
 } from '@/utils/miniPlayer';
 
+type MiniPlayerDockStatePayload = {
+  dockedEdge: 'left' | 'right' | 'top' | 'bottom' | null;
+  collapsed: boolean;
+};
+
 const ui = useUiStore();
 const appWindow = getCurrentWindow();
 const alwaysOnTop = ref(true);
@@ -122,7 +131,10 @@ const isPlaying = ref(false);
 const duration = ref(0);
 const currentTime = ref(0);
 const playMode = ref<PlayMode>('sequence');
+const dockedEdge = ref<MiniPlayerDockStatePayload['dockedEdge']>(null);
+const collapsed = ref(false);
 let cleanupMiniStateListener: null | (() => void) = null;
+let cleanupMiniDockStateListener: null | (() => void) = null;
 
 const subtitleText = computed(() => {
   if (!currentTrack.value) return '仅“回到主窗口”按钮可返回';
@@ -197,7 +209,7 @@ async function startDragging(event: MouseEvent) {
   const target = event.target as HTMLElement | null;
   if (target?.closest('[data-no-drag]')) return;
   try {
-    await invoke('window_start_dragging');
+    await invoke('mini_player_start_dragging');
   } catch (error) {
     console.error('mini player start dragging failed', error);
   }
@@ -291,6 +303,11 @@ onMounted(async () => {
     }
   });
 
+  cleanupMiniDockStateListener = await listen<MiniPlayerDockStatePayload>(MINI_PLAYER_DOCK_STATE_EVENT, (event) => {
+    dockedEdge.value = event.payload.dockedEdge;
+    collapsed.value = event.payload.collapsed;
+  });
+
   try {
     console.log('[mini-sync][mini] emit ready event');
     await emitMainEvent(MINI_PLAYER_READY_EVENT);
@@ -302,6 +319,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   cleanupMiniStateListener?.();
   cleanupMiniStateListener = null;
+  cleanupMiniDockStateListener?.();
+  cleanupMiniDockStateListener = null;
 });
 
 </script>
@@ -352,6 +371,10 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: none;
   backdrop-filter: blur(22px);
+}
+
+.mini-player-shell[data-collapsed='true'] .mini-player-card {
+  box-shadow: none;
 }
 
 .mini-player-shell[data-theme='light'] .mini-player-card {
