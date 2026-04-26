@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.1 - 2026-04-26
+
+- Published a patch release from the stable desktop baseline after dropping in-progress regressions from the working tree.
+- Synchronized app, Tauri, and Cargo package version metadata to `1.5.1` for GitHub distribution.
+- Refreshed the release record so packaged builds and repository tags point to the same patch version.
+
 ## v1.5.0 - 2026-04-09
 
 - Hardened the desktop app security baseline by replacing the permissive Tauri CSP with a minimal policy and restricting remote media URLs to supported schemes only.

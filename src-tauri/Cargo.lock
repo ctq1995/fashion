@@ -1100,7 +1100,7 @@ checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
 
 [[package]]
 name = "fashion-music"
-version = "1.4.0"
+version = "1.5.1"
 dependencies = [
  "lofty",
  "regex",
